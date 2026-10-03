@@ -218,4 +218,11 @@ describe('GestureEngine', () => {
     for (let t = 2560; t <= 3500; t += 30) g.onHand(pointing({ cx: 0.4 }), t);
     expect(g.takeEvents()).toEqual([{ type: 'down' }, { type: 'up' }]);
   });
+
+  it('an open palm does nothing when palm arming is off', () => {
+    const g = new GestureEngine({ ...config(), palmArming: false });
+    for (let t = 0; t <= 1500; t += 50) g.onHand(hand(), t);
+    expect(g.isArmed).toBe(false);
+    expect(g.state().armProgress).toBe(0);
+  });
 });

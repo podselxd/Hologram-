@@ -68,6 +68,7 @@ function renderSettings(): void {
   $<HTMLSelectElement>('control').value = settings.control;
   $<HTMLSelectElement>('dominantHand').value = settings.dominantHand;
   $<HTMLSelectElement>('clickMode').value = settings.clickMode;
+  $<HTMLInputElement>('requireArming').checked = settings.requireArming;
   $<HTMLInputElement>('zoneSize').value = String(settings.zoneSize);
   $('zoneSizeVal').textContent = `${Math.round(settings.zoneSize * 100)} %`;
   $<HTMLInputElement>('zoneOffsetY').value = String(settings.zoneOffsetY);
@@ -124,6 +125,7 @@ function wireControls(): void {
   $<HTMLSelectElement>('clickMode').addEventListener('change', (e) =>
     patch({ clickMode: (e.target as HTMLSelectElement).value === 'dwell' ? 'dwell' : 'pinch' }),
   );
+  $<HTMLInputElement>('requireArming').addEventListener('change', (e) => patch({ requireArming: (e.target as HTMLInputElement).checked }));
   $('btnArm').addEventListener('click', () => api.settingsCommand('toggle-armed'));
   $<HTMLSelectElement>('cameraBackend').addEventListener('change', (e) =>
     patch({ cameraBackend: (e.target as HTMLSelectElement).value === 'directshow' ? 'directshow' : 'auto' }),
@@ -426,7 +428,8 @@ async function main(): Promise<void> {
     else if (v.inputError) el.textContent = v.inputError;
     else {
       const mode = { none: 'sin mano', point: 'apuntando', pinch: 'pinza', drag: 'arrastrando', scroll: 'scroll' }[v.mode];
-      el.textContent = `${v.armed ? 'ARMADO' : 'Desarmado'} · ${mode}${v.control === 'test' ? ' · modo prueba (no mueve el mouse)' : v.armed ? ' · mueve el mouse real' : ''}`;
+      const head = v.paused ? 'En pausa (Ctrl+Alt+D para reanudar)' : v.armed ? 'Activo' : 'Desarmado (palma abierta 1 s)';
+      el.textContent = `${head} · ${mode}${v.control === 'test' ? ' · modo prueba (no mueve el mouse)' : v.armed ? ' · mueve el mouse real' : ''}`;
     }
     el.className = `msg ${v.armed && v.control === 'on' ? 'ok' : ''}`;
   });

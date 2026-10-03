@@ -124,8 +124,9 @@ Ventana de ajustes → **Control con las manos**:
 
 - **Modo:** *Desactivado* · *Prueba* (por defecto: dibuja un cursor virtual en pantalla, no toca el mouse) ·
   *Activado* (mueve el mouse real).
-- **Armar / desarmar:** palma abierta y quieta 1 s (un aro verde se llena), `Ctrl+Alt+D` o el botón. Desarmado no
-  hace nada, aunque esté *Activado*. Al desarmar o salir, nunca deja el botón del mouse apretado.
+- **El cursor sigue tu mano en todo momento** (con *Activado*). `Ctrl+Alt+D` o el botón lo **pausan** y reanudan.
+  Opcional: *Pedir armado con la palma* (palma abierta 1 s para armar/desarmar). Al pausar o salir, nunca deja el
+  botón del mouse apretado.
 - **Gestos:** el cursor sigue el punto entre pulgar e índice; pinza pulgar+índice = clic (y arrastre si mueves la
   mano); dos pinzas rápidas = doble clic; pulgar+medio = clic derecho; índice y medio extendidos = scroll que sigue a
   la mano, con inercia.

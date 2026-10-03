@@ -145,6 +145,9 @@ export interface PreviewImage {
 export interface GestureView {
   control: 'off' | 'test' | 'on';
   armed: boolean;
+  /** Paused with Ctrl+Alt+D (when arming is not required). */
+  paused?: boolean;
+  requireArming?: boolean;
   mode: 'none' | 'point' | 'pinch' | 'drag' | 'scroll';
   cursor: { x: number; y: number } | null;
   armProgress: number;

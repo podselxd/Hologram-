@@ -170,7 +170,9 @@ function drawCursor(g: GestureView): boolean {
   ctx.strokeStyle = live ? accent : 'rgba(170,180,200,0.75)';
   ctx.setLineDash(live ? [] : [5, 5]);
   ctx.beginPath();
-  ctx.arc(x, y, g.mode === 'pinch' || g.mode === 'drag' ? 10 : 16, 0, Math.PI * 2);
+  // In real mode the system cursor is already there: keep the ring small and light.
+  const r = g.control === 'on' ? (g.mode === 'pinch' || g.mode === 'drag' ? 8 : 13) : g.mode === 'pinch' || g.mode === 'drag' ? 10 : 16;
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   if ((g.mode === 'pinch' || g.mode === 'drag') && live) {
     ctx.fillStyle = accent;
     ctx.fill();
@@ -196,7 +198,7 @@ function drawCursor(g: GestureView): boolean {
     ctx.strokeStyle = meter >= 0.95 ? accent : 'rgba(255,255,255,0.8)';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(x, y, 20, Math.PI / 2, Math.PI / 2 + meter * Math.PI * 2);
+    ctx.arc(x, y, r + 5, -Math.PI / 2, -Math.PI / 2 + meter * Math.PI * 2);
     ctx.stroke();
   }
   if (g.armProgress > 0) {
@@ -217,7 +219,13 @@ function drawCursor(g: GestureView): boolean {
   ctx.fillStyle = 'rgba(230,240,255,0.9)';
   ctx.strokeStyle = 'rgba(5,10,20,0.8)';
   ctx.lineWidth = 3;
-  const label = g.control === 'test' ? (live ? 'prueba · armado' : 'prueba') : live ? '' : 'desarmado';
+  const label = g.paused
+    ? 'en pausa · Ctrl+Alt+D'
+    : g.control === 'test'
+      ? 'prueba'
+      : live
+        ? ''
+        : 'desarmado · palma 1 s';
   if (label) {
     ctx.strokeText(label, x + 20, y + 30);
     ctx.fillText(label, x + 20, y + 30);

@@ -35,6 +35,8 @@ describe('sanitizePatch', () => {
     });
     expect(sanitizePatch({ control: 'always', dominantHand: 'both', zoneSize: NaN })).toEqual({});
     expect(DEFAULT_SETTINGS.control).toBe('test'); // never moves the real mouse until the user says so
+    expect(sanitizePatch({ requireArming: true })).toEqual({ requireArming: true });
+    expect(sanitizePatch({ requireArming: 'yes' })).toEqual({});
   });
   it('validates the camera backend', () => {
     expect(sanitizePatch({ cameraBackend: 'directshow' })).toEqual({ cameraBackend: 'directshow' });

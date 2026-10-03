@@ -17,6 +17,8 @@ export interface GestureConfig {
   pinchUp: number;
   /** 'dwell': holding the cursor still clicks (no pinch needed). */
   clickMode: 'pinch' | 'dwell';
+  /** Whether holding an open palm toggles arming (off = arming only from the app/shortcut). */
+  palmArming?: boolean;
 }
 
 export type GestureMode = 'none' | 'point' | 'pinch' | 'drag' | 'scroll';
@@ -87,7 +89,7 @@ export function analyse(lm: Landmark[]): HandPose | null {
 const ARM_HOLD_MS = 1000;
 const ARM_STILL = 0.035;
 const LOST_MS = 300;
-const DRAG_START = 0.015;
+const DRAG_START = 0.01;
 const INERTIA_TAU_S = 0.35;
 const INERTIA_STOP = 0.02;
 const DWELL_MS = 800;
@@ -192,7 +194,7 @@ export class GestureEngine {
     const e = pose.extended;
     const openPalm = e.thumb && e.index && e.middle && e.ring && e.pinky && pose.pinchIndex > pinchUp;
     const palm = lm[9] as Landmark;
-    if (openPalm && !this.armLatch) {
+    if (openPalm && !this.armLatch && this.config.palmArming !== false) {
       if (this.armStart === null || !this.armAnchor || Math.hypot(palm.x - this.armAnchor.x, palm.y - this.armAnchor.y) > ARM_STILL) {
         this.armStart = t;
         this.armAnchor = { x: palm.x, y: palm.y };

@@ -36,6 +36,8 @@ export interface Settings {
   pinchSensitivity: number;
   /** pinch: thumb+index; dwell: hold the cursor still to click. */
   clickMode: ClickMode;
+  /** true: an open palm held 1 s must arm control first; false: the cursor follows the hand right away. */
+  requireArming: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zoneOffsetY: -0.05,
   pinchSensitivity: 0.5,
   clickMode: 'pinch',
+  requireArming: false,
 };
 
 export const LIMITS = {
@@ -87,6 +90,7 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
   if (r['control'] === 'off' || r['control'] === 'test' || r['control'] === 'on') out.control = r['control'];
   if (r['dominantHand'] === 'right' || r['dominantHand'] === 'left') out.dominantHand = r['dominantHand'];
   if (r['clickMode'] === 'pinch' || r['clickMode'] === 'dwell') out.clickMode = r['clickMode'];
+  if (typeof r['requireArming'] === 'boolean') out.requireArming = r['requireArming'];
   for (const key of ['zoneSize', 'zoneOffsetY', 'pinchSensitivity'] as const) {
     const v = r[key];
     if (typeof v === 'number' && Number.isFinite(v)) out[key] = clamp(v, LIMITS[key]);

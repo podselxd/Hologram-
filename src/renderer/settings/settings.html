@@ -153,10 +153,11 @@
           </select>
         </div>
         <p class="msg" id="ctlState" aria-live="polite">—</p>
-        <div class="row" style="margin-bottom:12px">
-          <button id="btnArm" type="button">Armar / desarmar</button>
-          <span class="hint">o palma abierta y quieta 1 s, o <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd></span>
+        <div class="row" style="margin-bottom:8px">
+          <button id="btnArm" type="button">Pausar / reanudar</button>
+          <span class="hint">o <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> en cualquier momento</span>
         </div>
+        <label class="check"><input type="checkbox" id="requireArming" /><span>Pedir armado con la palma<br /><span class="hint">Más seguro: el cursor solo se mueve después de mantener la palma abierta 1 s. Desmarcado, sigue tu mano en todo momento.</span></span></label>
         <div class="field">
           <label for="dominantHand">Mano que controla</label>
           <select id="dominantHand">
@@ -190,13 +191,13 @@
       </div>
       <div>
         <table aria-label="Gestos">
-          <tr><th scope="row">Mover</th><td>El cursor sigue el punto entre tu pulgar y tu índice.</td></tr>
+          <tr><th scope="row">Mover</th><td>El cursor sigue en todo momento el punto entre tu pulgar y tu índice.</td></tr>
           <tr><th scope="row">Clic</th><td>Junta las puntas de pulgar e índice (gesto 👌) y suelta. Un arco blanco junto al cursor se llena según te acercas. O elige "Mantener quieto".</td></tr>
-          <tr><th scope="row">Doble clic</th><td>Dos pinzas rápidas sin mover la mano.</td></tr>
+          <tr><th scope="row">Abrir</th><td>Dos pinzas rápidas sin mover la mano (doble clic): abre archivos y carpetas.</td></tr>
           <tr><th scope="row">Arrastrar</th><td>Mantén la pinza y mueve la mano.</td></tr>
           <tr><th scope="row">Clic derecho</th><td>Junta pulgar y dedo medio.</td></tr>
           <tr><th scope="row">Scroll</th><td>Índice y medio extendidos, mueve la mano arriba o abajo (como en el celular).</td></tr>
-          <tr><th scope="row">Armar</th><td>Palma abierta y quieta 1 s (el aro verde se llena). Igual para desarmar.</td></tr>
+          <tr><th scope="row">Pausa</th><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd>. Con "Pedir armado", la palma abierta 1 s arma y desarma.</td></tr>
         </table>
         <p class="hint" style="margin-top:10px">Límites: tu cámara da como máximo 30 lecturas por segundo y el dedo tiembla unos píxeles, así que es menos preciso que un mouse. No controla ventanas de administrador ni juegos en pantalla completa exclusiva. Cansa el brazo: úsalo por ratos.</p>
       </div>

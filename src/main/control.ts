@@ -1,5 +1,6 @@
 import { screen } from 'electron';
 import { GestureEngine, pinchThresholds, zoneFrom, type GestureConfig } from '../shared/gestures';
+import { OneEuroFilter } from '../shared/oneEuro';
 import type { Settings } from '../shared/settings';
 import type { GestureView, HandFrame, HandSample } from '../shared/types';
 import { createMouseInput, type MouseInput } from './input';
@@ -21,17 +22,36 @@ export class HandControl {
   private wheelAcc = 0;
   private flash: GestureView['flash'];
   private flashUntil = 0;
+  /** User pause (Ctrl+Alt+D) when arming is not required. */
+  private paused = false;
+  // Cursor smoothing in pixels: steady when the hand is still, immediate when it moves fast.
+  private fx = new OneEuroFilter(1.2, 0.012, 1);
+  private fy = new OneEuroFilter(1.2, 0.012, 1);
 
   constructor(
     private settings: Settings,
     private readonly publish: (view: GestureView) => void,
   ) {
     this.engine = new GestureEngine(this.configFor(settings));
+    this.syncArming();
+  }
+
+  /** Without "require arming" the cursor follows the hand as soon as control is on (unless paused). */
+  private syncArming(): void {
+    if (this.settings.control === 'off') this.engine.setArmed(false);
+    else if (!this.settings.requireArming) this.engine.setArmed(!this.paused);
   }
 
   private configFor(s: Settings): GestureConfig {
     const { down, up } = pinchThresholds(s.pinchSensitivity);
-    return { zone: zoneFrom(s.zoneSize, s.zoneOffsetY), mirror: s.mirror, pinchDown: down, pinchUp: up, clickMode: s.clickMode };
+    return {
+      zone: zoneFrom(s.zoneSize, s.zoneOffsetY),
+      mirror: s.mirror,
+      pinchDown: down,
+      pinchUp: up,
+      clickMode: s.clickMode,
+      palmArming: s.requireArming,
+    };
   }
 
   async start(): Promise<void> {
@@ -44,11 +64,17 @@ export class HandControl {
     this.settings = s;
     this.engine.configure(this.configFor(s));
     if (wasOn && s.control !== 'on') this.releaseButton();
-    if (s.control === 'off') this.engine.setArmed(false);
+    this.syncArming();
   }
 
+  /** Ctrl+Alt+D / button: pause and resume (or arm/disarm when arming is required). */
   toggleArmed(): void {
-    if (this.settings.control !== 'off') this.engine.setArmed(!this.engine.isArmed);
+    if (this.settings.control === 'off') return;
+    if (this.settings.requireArming) this.engine.setArmed(!this.engine.isArmed);
+    else {
+      this.paused = !this.paused;
+      this.syncArming();
+    }
   }
 
   /** MediaPipe labels handedness for a mirrored (selfie) image; the camera image is not mirrored. */
@@ -89,17 +115,21 @@ export class HandControl {
     const state = this.engine.state();
     const { bounds, scaleFactor } = screen.getPrimaryDisplay();
 
-    // Smooth the 30 fps tracking into ~60 Hz cursor motion (physical pixels for SetCursorPos).
+    // One-Euro on screen pixels, evaluated at ~60 Hz between 30 fps samples: still hand = steady, fast = instant.
     if (state.cursor) {
-      const target = {
-        x: (bounds.x + state.cursor.x * bounds.width) * scaleFactor,
-        y: (bounds.y + state.cursor.y * bounds.height) * scaleFactor,
-      };
-      if (!this.cursorPx) this.cursorPx = target;
-      const k = state.mode === 'pinch' ? 1 : 0.45; // frozen click position is exact
-      this.cursorPx = { x: this.cursorPx.x + (target.x - this.cursorPx.x) * k, y: this.cursorPx.y + (target.y - this.cursorPx.y) * k };
+      const tx = (bounds.x + state.cursor.x * bounds.width) * scaleFactor;
+      const ty = (bounds.y + state.cursor.y * bounds.height) * scaleFactor;
+      if (state.mode === 'pinch') {
+        this.cursorPx = { x: tx, y: ty }; // frozen click position is exact
+      } else {
+        this.cursorPx = { x: this.fx.filter(tx, now), y: this.fy.filter(ty, now) };
+      }
       if (this.live && state.mode !== 'scroll') this.input?.moveTo(this.cursorPx.x, this.cursorPx.y);
     } else {
+      if (this.cursorPx) {
+        this.fx.reset();
+        this.fy.reset();
+      }
       this.cursorPx = null;
     }
 
@@ -136,6 +166,8 @@ export class HandControl {
     this.publish({
       control: this.settings.control,
       armed: state.armed,
+      paused: this.paused,
+      requireArming: this.settings.requireArming,
       mode: state.mode,
       cursor: state.cursor,
       armProgress: state.armProgress,

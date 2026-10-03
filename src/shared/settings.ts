@@ -3,6 +3,8 @@ export type HandsChoice = 'auto' | 1 | 2;
 export type ColorPreset = 'azul' | 'cian' | 'violeta' | 'verde';
 export type AutoUpdate = 'auto' | 'ask';
 export type CameraBackend = 'auto' | 'directshow';
+export type ControlMode = 'off' | 'test' | 'on';
+export type DominantHand = 'right' | 'left';
 
 export interface Settings {
   /** Chosen camera; undefined = system default. */
@@ -22,6 +24,15 @@ export interface Settings {
   autoUpdate: AutoUpdate;
   /** Windows capture API; 'directshow' is a compatibility fallback (needs a restart). */
   cameraBackend: CameraBackend;
+  /** off: only draw the hands; test: draw a virtual cursor; on: move the real mouse (when armed). */
+  control: ControlMode;
+  dominantHand: DominantHand;
+  /** Size of the camera area mapped to the screen (smaller = less arm movement). */
+  zoneSize: number;
+  /** Vertical shift of that area (negative = higher in the image). */
+  zoneOffsetY: number;
+  /** Higher = the pinch triggers with the fingers further apart. */
+  pinchSensitivity: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,9 +45,20 @@ export const DEFAULT_SETTINGS: Settings = {
   mirror: true,
   autoUpdate: 'auto',
   cameraBackend: 'auto',
+  control: 'test',
+  dominantHand: 'right',
+  zoneSize: 0.6,
+  zoneOffsetY: -0.05,
+  pinchSensitivity: 0.5,
 };
 
-export const LIMITS = { smoothing: [0, 1], dotSize: [0.6, 1.8] } as const;
+export const LIMITS = {
+  smoothing: [0, 1],
+  dotSize: [0.6, 1.8],
+  zoneSize: [0.3, 1],
+  zoneOffsetY: [-0.3, 0.3],
+  pinchSensitivity: [0, 1],
+} as const;
 export const COLORS: readonly ColorPreset[] = ['azul', 'cian', 'violeta', 'verde'];
 
 const clamp = (v: number, [lo, hi]: readonly [number, number]): number => Math.min(hi, Math.max(lo, v));
@@ -58,6 +80,12 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
   if (typeof r['mirror'] === 'boolean') out.mirror = r['mirror'];
   if (r['autoUpdate'] === 'auto' || r['autoUpdate'] === 'ask') out.autoUpdate = r['autoUpdate'];
   if (r['cameraBackend'] === 'auto' || r['cameraBackend'] === 'directshow') out.cameraBackend = r['cameraBackend'];
+  if (r['control'] === 'off' || r['control'] === 'test' || r['control'] === 'on') out.control = r['control'];
+  if (r['dominantHand'] === 'right' || r['dominantHand'] === 'left') out.dominantHand = r['dominantHand'];
+  for (const key of ['zoneSize', 'zoneOffsetY', 'pinchSensitivity'] as const) {
+    const v = r[key];
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = clamp(v, LIMITS[key]);
+  }
   return out;
 }
 

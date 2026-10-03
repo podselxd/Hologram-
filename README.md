@@ -4,7 +4,7 @@ Overlay de escritorio controlado por manos. La webcam detecta hasta **dos manos*
 dibuja sus 21 articulaciones como puntos azules cristalinos, con las líneas del esqueleto, sobre todo el
 escritorio. La ventana es transparente, siempre visible y **deja pasar los clics**.
 
-> **Estado: fase 1.** Overlay + tracking + benchmark + ventana de ajustes. Todavía **no** controla el mouse, el scroll ni las
+> **Estado: fase 2.** Overlay, tracking, ventana de ajustes y **control del mouse con las manos** (mover, clic, doble clic, arrastrar, clic derecho, scroll). Todavía no hay gestos de ventanas (`Alt+Tab`, etc.). Antes: no controlaba el mouse, el scroll ni las
 > ventanas (fases siguientes, ver más abajo).
 
 ## Descargar el .exe (Windows)
@@ -115,6 +115,27 @@ de la app (`%APPDATA%/hologram` en Windows).
 
 Además, el overlay baja efectos solo si los fotogramas se alargan (p95 > 22 ms) y los recupera tras 10 s
 estables.
+
+## Control con las manos
+
+Ventana de ajustes → **Control con las manos**:
+
+- **Modo:** *Desactivado* · *Prueba* (por defecto: dibuja un cursor virtual en pantalla, no toca el mouse) ·
+  *Activado* (mueve el mouse real).
+- **Armar / desarmar:** palma abierta y quieta 1 s (un aro verde se llena), `Ctrl+Alt+D` o el botón. Desarmado no
+  hace nada, aunque esté *Activado*. Al desarmar o salir, nunca deja el botón del mouse apretado.
+- **Gestos:** el cursor sigue el punto entre pulgar e índice; pinza pulgar+índice = clic (y arrastre si mueves la
+  mano); dos pinzas rápidas = doble clic; pulgar+medio = clic derecho; índice y medio extendidos = scroll que sigue a
+  la mano, con inercia.
+- **Calibración:** mano que controla, tamaño y altura de la **zona de control** (rectángulo amarillo en la vista en
+  vivo: más pequeña = menos movimiento de brazo) y sensibilidad de la pinza.
+- **Cómo:** el cursor se suaviza a ~60 Hz a partir del tracking (≤ 30 lecturas/s con una webcam de 30 FPS); la
+  entrada real usa `SetCursorPos`/`mouse_event` de `user32` vía `koffi`.
+
+Límites reales: menos preciso que un mouse (botones pequeños fallarán); no controla ventanas de administrador ni
+juegos en pantalla completa exclusiva; cansa el brazo. Verificado: la lógica de gestos con 15 pruebas de secuencias
+sintéticas, el cursor virtual y la interfaz en la app real con cámara simulada, y (en el CI de Windows) que el `.exe`
+empaquetado carga `koffi` + `user32`. **No verificado:** mover tu mouse real con tus manos en tu PC.
 
 ## Cámara: cómo se leen los FPS
 

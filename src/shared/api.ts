@@ -2,6 +2,7 @@ import type { Settings } from './settings';
 import type {
   CameraInfo,
   Command,
+  GestureView,
   HandFrame,
   InitConfig,
   PreviewImage,
@@ -42,6 +43,7 @@ export interface HologramApi {
   onRenderStats(cb: (stats: RenderStats) => void): void;
   onUpdate(cb: (snapshot: UpdateSnapshot) => void): void;
   onPreview(cb: (image: PreviewImage) => void): void;
+  onGesture(cb: (view: GestureView) => void): void;
 }
 
 export const CH = {
@@ -61,4 +63,5 @@ export const CH = {
   cameras: 'hologram:cameras',
   renderStats: 'hologram:render-stats',
   command: 'hologram:command',
+  gesture: 'hologram:gesture',
 } as const;

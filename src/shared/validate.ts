@@ -1,6 +1,6 @@
 import type { PreviewImage, SettingsCommand, UpdateAction } from './types';
 
-const COMMANDS: readonly string[] = ['rerun-benchmark', 'toggle-overlay', 'quit'];
+const COMMANDS: readonly string[] = ['rerun-benchmark', 'toggle-overlay', 'toggle-armed', 'quit'];
 const ACTIONS: readonly string[] = ['check', 'download', 'apply', 'rollback'];
 
 export const MAX_PREVIEW_BYTES = 2_000_000;

@@ -25,6 +25,17 @@ describe('sanitizePatch', () => {
     expect(sanitizePatch({ deviceId: 'x'.repeat(513) })).toEqual({});
     expect(sanitizePatch({ deviceId: 'cam-1' })).toEqual({ deviceId: 'cam-1' });
   });
+  it('validates the hand-control settings', () => {
+    expect(sanitizePatch({ control: 'on', dominantHand: 'left', zoneSize: 5, zoneOffsetY: -1, pinchSensitivity: 0.7 })).toEqual({
+      control: 'on',
+      dominantHand: 'left',
+      zoneSize: 1,
+      zoneOffsetY: -0.3,
+      pinchSensitivity: 0.7,
+    });
+    expect(sanitizePatch({ control: 'always', dominantHand: 'both', zoneSize: NaN })).toEqual({});
+    expect(DEFAULT_SETTINGS.control).toBe('test'); // never moves the real mouse until the user says so
+  });
   it('validates the camera backend', () => {
     expect(sanitizePatch({ cameraBackend: 'directshow' })).toEqual({ cameraBackend: 'directshow' });
     expect(sanitizePatch({ cameraBackend: 'v4l2' })).toEqual({});

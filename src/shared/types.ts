@@ -120,7 +120,7 @@ export type Command =
   | { type: 'set-preview'; enabled: boolean };
 
 /** Actions the settings window may ask the main process to run. */
-export type SettingsCommand = 'rerun-benchmark' | 'toggle-overlay' | 'quit';
+export type SettingsCommand = 'rerun-benchmark' | 'toggle-overlay' | 'toggle-armed' | 'quit';
 export type UpdateAction = 'check' | 'download' | 'apply' | 'rollback';
 
 export interface UpdateSnapshot {
@@ -139,4 +139,17 @@ export interface PreviewImage {
   width: number;
   height: number;
   data: Uint8Array;
+}
+
+/** What the hand controller is doing, for the overlay cursor and the settings window. */
+export interface GestureView {
+  control: 'off' | 'test' | 'on';
+  armed: boolean;
+  mode: 'none' | 'point' | 'pinch' | 'drag' | 'scroll';
+  cursor: { x: number; y: number } | null;
+  armProgress: number;
+  /** Set when the real mouse cannot be driven (not Windows, FFI failed…). */
+  inputError?: string;
+  /** Last click/scroll, for a visual flash. */
+  flash?: 'click' | 'right' | 'scroll';
 }

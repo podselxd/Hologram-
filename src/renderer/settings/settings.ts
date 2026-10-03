@@ -1,8 +1,10 @@
 import { paletteFor, type Palette } from '../../shared/appearance';
+import { zoneFrom } from '../../shared/gestures';
 import { HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { COLORS, DEFAULT_SETTINGS, type ColorPreset, type Settings } from '../../shared/settings';
 import type {
   CameraInfo,
+  GestureView,
   HandFrame,
   PreviewImage,
   ProfileSelection,
@@ -63,6 +65,13 @@ function renderSettings(): void {
   $<HTMLSelectElement>('hands').value = String(settings.hands);
   $<HTMLSelectElement>('autoUpdate').value = settings.autoUpdate;
   $<HTMLSelectElement>('cameraBackend').value = settings.cameraBackend;
+  $<HTMLSelectElement>('control').value = settings.control;
+  $<HTMLSelectElement>('dominantHand').value = settings.dominantHand;
+  $<HTMLInputElement>('zoneSize').value = String(settings.zoneSize);
+  $('zoneSizeVal').textContent = `${Math.round(settings.zoneSize * 100)} %`;
+  $<HTMLInputElement>('zoneOffsetY').value = String(settings.zoneOffsetY);
+  $<HTMLInputElement>('pinchSensitivity').value = String(settings.pinchSensitivity);
+  $('pinchVal').textContent = `${Math.round(settings.pinchSensitivity * 100)} %`;
   $<HTMLInputElement>('dotSize').value = String(settings.dotSize);
   $('dotSizeVal').textContent = `${Math.round(settings.dotSize * 100)} %`;
   $<HTMLInputElement>('smoothing').value = String(settings.smoothing);
@@ -98,6 +107,20 @@ function wireControls(): void {
     const v = (e.target as HTMLSelectElement).value;
     patch({ hands: v === '1' ? 1 : v === '2' ? 2 : 'auto' });
   });
+  $<HTMLSelectElement>('control').addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    patch({ control: v === 'on' ? 'on' : v === 'off' ? 'off' : 'test' });
+  });
+  $<HTMLSelectElement>('dominantHand').addEventListener('change', (e) =>
+    patch({ dominantHand: (e.target as HTMLSelectElement).value === 'left' ? 'left' : 'right' }),
+  );
+  for (const id of ['zoneSize', 'zoneOffsetY', 'pinchSensitivity'] as const) {
+    $<HTMLInputElement>(id).addEventListener('input', (e) => {
+      patchThrottled({ [id]: Number((e.target as HTMLInputElement).value) });
+      renderSettings();
+    });
+  }
+  $('btnArm').addEventListener('click', () => api.settingsCommand('toggle-armed'));
   $<HTMLSelectElement>('cameraBackend').addEventListener('change', (e) =>
     patch({ cameraBackend: (e.target as HTMLSelectElement).value === 'directshow' ? 'directshow' : 'auto' }),
   );
@@ -187,6 +210,17 @@ function drawView(now: number): void {
       g.scale(-1, 1);
     }
     g.drawImage(image, 0, 0, W, H);
+    g.restore();
+  }
+
+  if (settings.control !== 'off') {
+    const z = zoneFrom(settings.zoneSize, settings.zoneOffsetY);
+    const x0 = (settings.mirror ? 1 - z.x1 : z.x0) * W;
+    g.save();
+    g.setLineDash([6, 6]);
+    g.strokeStyle = 'rgba(255,200,90,0.8)';
+    g.lineWidth = 2;
+    g.strokeRect(x0, z.y0 * H, (z.x1 - z.x0) * W, (z.y1 - z.y0) * H);
     g.restore();
   }
 
@@ -382,6 +416,16 @@ async function main(): Promise<void> {
     renderCameraList();
   });
   api.onUpdate(renderUpdate);
+  api.onGesture((v: GestureView) => {
+    const el = $('ctlState');
+    if (v.control === 'off') el.textContent = 'Desactivado: Hologram solo dibuja tus manos.';
+    else if (v.inputError) el.textContent = v.inputError;
+    else {
+      const mode = { none: 'sin mano', point: 'apuntando', pinch: 'pinza', drag: 'arrastrando', scroll: 'scroll' }[v.mode];
+      el.textContent = `${v.armed ? 'ARMADO' : 'Desarmado'} · ${mode}${v.control === 'test' ? ' · modo prueba (no mueve el mouse)' : v.armed ? ' · mueve el mouse real' : ''}`;
+    }
+    el.className = `msg ${v.armed && v.control === 'on' ? 'ok' : ''}`;
+  });
 
   settings = await api.getSettings();
   safeRenderActive = (await api.getInit()).safeRenderActive;

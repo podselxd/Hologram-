@@ -31,6 +31,7 @@ import { parseCli } from './cli';
 import { trayIconPixels } from './iconPixels';
 import { loadSettings, saveSettings, writeReport } from './settings';
 import { UpdateController } from './updateController';
+import { HandControl } from './control';
 
 const SCHEME = 'app';
 const HOST = 'hologram';
@@ -49,6 +50,8 @@ let updater: UpdateController | null = null;
 let overlay: BrowserWindow | null = null;
 let tracker: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
+let control: HandControl | null = null;
+let lastGestureToSettings = 0;
 let settings = loadSettings();
 let cameras: CameraInfo[] = [];
 let lastSelection: ProfileSelection | null = null;
@@ -215,6 +218,7 @@ function patchSettings(raw: unknown): void {
   settings = applyPatch(settings, patch);
   saveSettings(settings);
   broadcastSettings();
+  control?.updateSettings(settings);
   if (settings.autoUpdate !== before.autoUpdate) updater?.onModeChanged();
   if (settings.cameraBackend !== before.cameraBackend) {
     new Notification({ title: 'Hologram', body: 'Método de captura cambiado. Cierra y vuelve a abrir Hologram para aplicarlo.' }).show();
@@ -249,6 +253,7 @@ function registerIpc(): void {
     if (!isFrom(settingsWin, e.sender) || !isSettingsCommand(cmd)) return;
     if (cmd === 'rerun-benchmark') broadcast({ type: 'rerun-benchmark' });
     else if (cmd === 'toggle-overlay') toggleOverlay();
+    else if (cmd === 'toggle-armed') control?.toggleArmed();
     else app.quit();
   });
   ipcMain.on(CH.setPreview, (e, enabled: unknown) => {
@@ -267,6 +272,7 @@ function registerIpc(): void {
     if (++framesRelayed % 30 === 1) log(`frames relayed: ${framesRelayed}, hands in last: ${frame.hands.length}`);
     send(overlay, CH.frame, frame);
     sendToSettings(CH.frame, frame);
+    control?.onFrame(frame);
   });
   ipcMain.on(CH.preview, (e, image: unknown) => {
     if (!isFrom(tracker, e.sender) || !previewWanted || !isPreviewImage(image)) return;
@@ -368,6 +374,7 @@ function registerShortcuts(): void {
   bind('CommandOrControl+Alt+C', cycleCamera);
   bind('CommandOrControl+Alt+B', () => broadcast({ type: 'rerun-benchmark' }));
   bind('CommandOrControl+Alt+S', openSettings);
+  bind('CommandOrControl+Alt+D', () => control?.toggleArmed());
   bind('CommandOrControl+Alt+Q', () => app.quit());
 }
 
@@ -424,12 +431,22 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
     updater.start();
     updater.reportPreviousUpdate();
+    control = new HandControl(settings, (view) => {
+      send(overlay, CH.gesture, view);
+      const now = Date.now();
+      if (now - lastGestureToSettings > 100) {
+        lastGestureToSettings = now;
+        sendToSettings(CH.gesture, view);
+      }
+    });
+    void control.start();
     refreshTray();
     openSettings();
     scheduleDebugScreenshots();
   });
   app.on('window-all-closed', () => app.quit());
   app.on('will-quit', () => {
+    control?.stop();
     globalShortcut.unregisterAll();
     writeReport('last-session.json', {
       at: new Date().toISOString(),

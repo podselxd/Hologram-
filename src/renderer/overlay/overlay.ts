@@ -4,7 +4,7 @@ import { FINGERTIPS, HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { HandPredictor } from '../../shared/predictor';
 import { PROFILES } from '../../shared/profiles';
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
-import { LANDMARK_COUNT, MAX_HANDS, type HandFrame, type Profile, type RenderStats } from '../../shared/types';
+import { LANDMARK_COUNT, MAX_HANDS, type GestureView, type HandFrame, type Profile, type RenderStats } from '../../shared/types';
 
 const api = window.hologram;
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -89,6 +89,8 @@ api.onProfile((sel) => {
   resize();
 });
 api.onSettings(applySettings);
+let gesture: GestureView | null = null;
+api.onGesture((g) => (gesture = g));
 
 // ---- drawing -------------------------------------------------------------
 function pointRadius(i: number): number {
@@ -156,6 +158,65 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
   ctx.globalAlpha = 1;
 }
 
+/** Virtual cursor: grey when disarmed, colour when armed, filled while pinching, arc while arming. */
+function drawCursor(g: GestureView): boolean {
+  if (g.control === 'off' || !g.cursor) return false;
+  const x = g.cursor.x * width;
+  const y = g.cursor.y * height;
+  const live = g.armed;
+  const accent = g.control === 'on' ? palette.line : 'rgba(255,200,90,0.95)';
+  ctx.save();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = live ? accent : 'rgba(170,180,200,0.75)';
+  ctx.setLineDash(live ? [] : [5, 5]);
+  ctx.beginPath();
+  ctx.arc(x, y, g.mode === 'pinch' || g.mode === 'drag' ? 10 : 16, 0, Math.PI * 2);
+  if ((g.mode === 'pinch' || g.mode === 'drag') && live) {
+    ctx.fillStyle = accent;
+    ctx.fill();
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (g.mode === 'scroll') {
+    ctx.beginPath();
+    ctx.moveTo(x, y - 26);
+    ctx.lineTo(x - 7, y - 18);
+    ctx.lineTo(x + 7, y - 18);
+    ctx.closePath();
+    ctx.moveTo(x, y + 26);
+    ctx.lineTo(x - 7, y + 18);
+    ctx.lineTo(x + 7, y + 18);
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+  }
+  if (g.armProgress > 0) {
+    ctx.strokeStyle = 'rgba(110,231,168,0.95)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y, 24, -Math.PI / 2, -Math.PI / 2 + g.armProgress * Math.PI * 2);
+    ctx.stroke();
+  }
+  if (g.flash) {
+    ctx.strokeStyle = g.flash === 'right' ? 'rgba(255,170,90,0.9)' : accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.font = '12px "Segoe UI", sans-serif';
+  ctx.fillStyle = 'rgba(230,240,255,0.9)';
+  ctx.strokeStyle = 'rgba(5,10,20,0.8)';
+  ctx.lineWidth = 3;
+  const label = g.control === 'test' ? (live ? 'prueba · armado' : 'prueba') : live ? '' : 'desarmado';
+  if (label) {
+    ctx.strokeText(label, x + 20, y + 30);
+    ctx.fillText(label, x + 20, y + 30);
+  }
+  ctx.restore();
+  return true;
+}
+
 const wasVisible = new Array<boolean>(MAX_HANDS).fill(false);
 const lostAt: number[] = [];
 let drewLastFrame = false;
@@ -180,6 +241,7 @@ function draw(now: number): void {
     drawHand(slot, out, alpha);
     drew = true;
   }
+  if (gesture && drawCursor(gesture)) drew = true;
   drewLastFrame = drew;
 }
 

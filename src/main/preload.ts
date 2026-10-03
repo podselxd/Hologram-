@@ -29,6 +29,7 @@ const api: HologramApi = {
   onRenderStats: (cb) => on(CH.renderStats, cb),
   onUpdate: (cb) => on(CH.update, cb),
   onPreview: (cb) => on(CH.preview, cb),
+  onGesture: (cb) => on(CH.gesture, cb),
 };
 
 contextBridge.exposeInMainWorld('hologram', api);

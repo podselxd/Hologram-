@@ -1,6 +1,6 @@
 {
   "name": "hologram",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "private": true,
   "description": "Desktop hand-tracking overlay: crystal-blue hand landmarks drawn over the whole desktop.",
   "main": "dist/main.js",
@@ -27,7 +27,8 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1"
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "koffi": "^3.3.2"
   },
   "author": "Ismael Fern\u00e1ndez",
   "build": {
@@ -41,7 +42,12 @@
       "dist/**/*",
       "package.json",
       "!**/*.map",
-      "!node_modules/**"
+      "!node_modules/**",
+      "node_modules/koffi/package.json",
+      "node_modules/koffi/index.*",
+      "node_modules/koffi/indirect.*",
+      "node_modules/koffi/src/koffi/**/*.{js,cjs,json}",
+      "node_modules/@koromix/koffi-win32-x64/**"
     ],
     "win": {
       "target": [

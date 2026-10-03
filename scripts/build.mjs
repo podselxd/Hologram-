@@ -18,7 +18,7 @@ await mkdir(dist, { recursive: true });
 
 const common = { bundle: true, sourcemap: true, logLevel: 'info' };
 await Promise.all([
-  build({ ...common, entryPoints: [p('src/main/main.ts')], outfile: p('dist/main.js'), platform: 'node', format: 'cjs', target: 'node22', external: ['electron'] }),
+  build({ ...common, entryPoints: [p('src/main/main.ts')], outfile: p('dist/main.js'), platform: 'node', format: 'cjs', target: 'node22', external: ['electron', 'koffi'] }),
   build({ ...common, entryPoints: [p('src/main/preload.ts')], outfile: p('dist/preload.js'), platform: 'node', format: 'cjs', target: 'node22', external: ['electron'] }),
   build({ ...common, entryPoints: [p('src/renderer/overlay/overlay.ts')], outfile: p('dist/overlay.js'), platform: 'browser', format: 'iife', target: 'chrome140' }),
   build({ ...common, entryPoints: [p('src/renderer/settings/settings.ts')], outfile: p('dist/settings.js'), platform: 'browser', format: 'iife', target: 'chrome140' }),

@@ -140,6 +140,61 @@
     <div class="bench" id="bench" aria-live="polite"></div>
   </section>
 
+  <section class="card wide" aria-labelledby="h-ctl">
+    <h2 id="h-ctl">Control con las manos</h2>
+    <div class="live" style="grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr)">
+      <div>
+        <div class="field">
+          <label for="control">Modo</label>
+          <select id="control">
+            <option value="off">Desactivado (solo dibuja las manos)</option>
+            <option value="test">Prueba (cursor virtual en pantalla, no toca el mouse)</option>
+            <option value="on">Activado (mueve el mouse real cuando está armado)</option>
+          </select>
+        </div>
+        <p class="msg" id="ctlState" aria-live="polite">—</p>
+        <div class="row" style="margin-bottom:12px">
+          <button id="btnArm" type="button">Armar / desarmar</button>
+          <span class="hint">o palma abierta y quieta 1 s, o <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd></span>
+        </div>
+        <div class="field">
+          <label for="dominantHand">Mano que controla</label>
+          <select id="dominantHand">
+            <option value="right">Derecha</option>
+            <option value="left">Izquierda</option>
+          </select>
+          <span class="hint">Si el cursor sigue a la otra mano, cambia esta opción.</span>
+        </div>
+        <div class="field">
+          <label for="zoneSize">Zona de control <span class="hint" id="zoneSizeVal"></span></label>
+          <input type="range" id="zoneSize" min="0.3" max="1" step="0.05" />
+          <span class="hint">Más pequeña = menos movimiento de brazo (menos cansancio), pero menos precisión. Se ve como un rectángulo en la vista en vivo.</span>
+        </div>
+        <div class="field">
+          <label for="zoneOffsetY">Altura de la zona</label>
+          <input type="range" id="zoneOffsetY" min="-0.3" max="0.3" step="0.05" />
+        </div>
+        <div class="field">
+          <label for="pinchSensitivity">Sensibilidad de la pinza <span class="hint" id="pinchVal"></span></label>
+          <input type="range" id="pinchSensitivity" min="0" max="1" step="0.05" />
+          <span class="hint">Más alta = hace clic con los dedos más separados (más fácil, más clics sin querer).</span>
+        </div>
+      </div>
+      <div>
+        <table aria-label="Gestos">
+          <tr><th scope="row">Mover</th><td>El cursor sigue el punto entre tu pulgar y tu índice.</td></tr>
+          <tr><th scope="row">Clic</th><td>Junta pulgar e índice (pinza) y suelta.</td></tr>
+          <tr><th scope="row">Doble clic</th><td>Dos pinzas rápidas sin mover la mano.</td></tr>
+          <tr><th scope="row">Arrastrar</th><td>Mantén la pinza y mueve la mano.</td></tr>
+          <tr><th scope="row">Clic derecho</th><td>Junta pulgar y dedo medio.</td></tr>
+          <tr><th scope="row">Scroll</th><td>Índice y medio extendidos, mueve la mano arriba o abajo (como en el celular).</td></tr>
+          <tr><th scope="row">Armar</th><td>Palma abierta y quieta 1 s (el aro verde se llena). Igual para desarmar.</td></tr>
+        </table>
+        <p class="hint" style="margin-top:10px">Límites: tu cámara da como máximo 30 lecturas por segundo y el dedo tiembla unos píxeles, así que es menos preciso que un mouse. No controla ventanas de administrador ni juegos en pantalla completa exclusiva. Cansa el brazo: úsalo por ratos.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="card" aria-labelledby="h-look">
     <h2 id="h-look">Apariencia</h2>
     <fieldset>
@@ -186,6 +241,7 @@
     <label class="check"><input type="checkbox" id="safeRender" /><span>Modo seguro<br /><span class="hint">Desactiva la aceleración por hardware (usa solo CPU, más lento). Úsalo si el overlay parpadea. Hay que cerrar y abrir la app.</span></span></label>
     <table aria-label="Atajos de teclado globales">
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></th><td>Abrir esta ventana</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd></th><td>Armar o desarmar el control del mouse</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></th><td>Mostrar u ocultar el overlay (apaga la cámara)</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></th><td>Cambiar de cámara</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></th><td>Repetir el benchmark</td></tr>

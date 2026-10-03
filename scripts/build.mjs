@@ -1,8 +1,10 @@
 import { build } from 'esbuild';
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
-const dist = new URL('../dist/', import.meta.url);
-const p = (rel) => new URL(`../${rel}`, import.meta.url).pathname;
+// fileURLToPath (not .pathname) so Windows drive-letter paths resolve correctly.
+const p = (rel) => fileURLToPath(new URL(`../${rel}`, import.meta.url));
+const dist = p('dist');
 
 try {
   await stat(p('assets/hand_landmarker.task'));

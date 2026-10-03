@@ -44,7 +44,7 @@ describe('chooseProfile', () => {
   it('reports a machine that misses the minimum', () => {
     const sel = chooseProfile({ twoHands: [m('CPU', 80)], oneHand: m('CPU', 60, 1), reliable: true });
     expect(sel.meetsMinimum).toBe(false);
-    expect(sel.reason).toMatch(/does not meet the minimum/);
+    expect(sel.reason).toMatch(/no cumple el mínimo/);
   });
 
   it('survives having no measurements', () => {

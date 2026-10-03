@@ -1,3 +1,5 @@
+import type { Settings } from './settings';
+
 export interface Landmark {
   x: number;
   y: number;
@@ -44,6 +46,8 @@ export interface ProfileSelection {
   meetsMinimum: boolean;
   /** False when the benchmark ran without hands in view (numbers not trusted). */
   reliable: boolean;
+  /** True when the profile was fixed by hand: performance was NOT measured. */
+  forced?: boolean;
   reason: string;
   measurements: DelegateMeasurement[];
 }
@@ -64,6 +68,8 @@ export interface TrackerStats {
   numHands: 1 | 2;
   source: string;
   resolution: string;
+  /** True while the overlay is hidden and the camera is released. */
+  paused: boolean;
 }
 
 export interface RenderStats {
@@ -76,6 +82,10 @@ export interface RenderStats {
   frames: number;
   drawAvgMs: number;
   degradeLevel: number;
+  /** Times a hand vanished in the last 5 s (high = unstable tracking). */
+  handsLost: number;
+  /** Capture-to-draw latency of the last frame, ms. */
+  latencyMs: number;
 }
 
 export interface CameraInfo {
@@ -85,15 +95,33 @@ export interface CameraInfo {
 
 export interface InitConfig {
   mode: 'camera' | 'video';
-  deviceId?: string;
-  /** Skip the benchmark and force a profile. */
+  settings: Settings;
+  /** From the command line only; they take precedence over the saved settings. */
   profileOverride?: ProfileName;
   forceHands?: 1 | 2;
-  hud: boolean;
 }
 
 export type Command =
-  | { type: 'toggle-hud' }
-  | { type: 'set-camera'; deviceId: string }
   | { type: 'rerun-benchmark' }
-  | { type: 'set-paused'; paused: boolean };
+  | { type: 'set-paused'; paused: boolean }
+  | { type: 'set-preview'; enabled: boolean };
+
+/** Actions the settings window may ask the main process to run. */
+export type SettingsCommand = 'rerun-benchmark' | 'toggle-overlay' | 'quit';
+export type UpdateAction = 'check' | 'download' | 'apply' | 'rollback';
+
+export interface UpdateSnapshot {
+  enabled: boolean;
+  version: string;
+  state: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error';
+  latest?: string;
+  canRollback: boolean;
+  message?: string;
+}
+
+/** Downscaled JPEG of the camera image, sent only while the settings preview is on. */
+export interface PreviewImage {
+  width: number;
+  height: number;
+  data: Uint8Array;
+}

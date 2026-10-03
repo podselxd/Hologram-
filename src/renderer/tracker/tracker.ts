@@ -1,7 +1,9 @@
 import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { FrameStats, percentile } from '../../shared/frameStats';
+import { smoothingParams } from '../../shared/appearance';
 import { OneEuroFilter } from '../../shared/oneEuro';
 import { chooseProfile, PROFILES } from '../../shared/profiles';
+import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
 import {
   LANDMARK_COUNT,
   MAX_HANDS,
@@ -19,6 +21,10 @@ const api = window.hologram;
 const video = document.getElementById('video') as HTMLVideoElement;
 
 let init: InitConfig;
+let settings: Settings = DEFAULT_SETTINGS;
+let previewOn = false;
+let previewBusy = false;
+let lastPreviewAt = 0;
 let profile: Profile = PROFILES.medium;
 let delegate: DelegateName = 'GPU';
 let numHands: 1 | 2 = 2;
@@ -40,6 +46,65 @@ let lastPresentedAt = performance.now();
 let cameraFps = 0;
 
 const status = (message: string): void => api.sendStatus(message);
+
+/** CLI flags win over the saved settings. */
+function effectiveProfile(): Profile['name'] | undefined {
+  return init.profileOverride ?? (settings.profile !== 'auto' ? settings.profile : undefined);
+}
+function effectiveHands(): 1 | 2 | undefined {
+  return init.forceHands ?? (settings.hands !== 'auto' ? settings.hands : undefined);
+}
+
+function applySmoothing(): void {
+  const { minCutoff, beta } = smoothingParams(settings.smoothing);
+  for (const slot of filters) for (const f of slot) f.configure(minCutoff, beta);
+}
+
+/** Sends a small JPEG of the camera image, at most ~15 fps, only while the settings preview asks for it. */
+function maybeSendPreview(now: number): void {
+  if (!previewOn || previewBusy || now - lastPreviewAt < 66) return;
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (w === 0 || h === 0) return;
+  previewBusy = true;
+  lastPreviewAt = now;
+  const width = 320;
+  const height = Math.max(16, Math.round((h / w) * width));
+  const canvas = new OffscreenCanvas(width, height);
+  const g = canvas.getContext('2d');
+  if (!g) {
+    previewBusy = false;
+    return;
+  }
+  g.drawImage(video, 0, 0, width, height);
+  canvas
+    .convertToBlob({ type: 'image/jpeg', quality: 0.6 })
+    .then((blob) => blob.arrayBuffer())
+    .then((buf) => api.sendPreview({ width, height, data: new Uint8Array(buf) }))
+    .catch(() => undefined)
+    .finally(() => {
+      previewBusy = false;
+    });
+}
+
+function applySettings(next: Settings): void {
+  const prev = settings;
+  settings = next;
+  if (next.smoothing !== prev.smoothing) applySmoothing();
+  if (next.deviceId !== prev.deviceId && !paused && !benchmarking) void startSource(profile);
+  if ((next.profile !== prev.profile || next.hands !== prev.hands) && !paused && !benchmarking) void reselect();
+}
+
+/** Re-applies the manual profile/hands choice, or benchmarks again when everything is "auto". */
+async function reselect(): Promise<void> {
+  try {
+    const forced = effectiveProfile();
+    if (forced) await applySelection(await forcedSelection(forced));
+    else await runAndApplyBenchmark();
+  } catch (err) {
+    status(`No pude aplicar el perfil: ${String(err)}`);
+  }
+}
 
 async function createLandmarker(d: DelegateName, hands: 1 | 2): Promise<HandLandmarker> {
   const vision = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
@@ -74,9 +139,9 @@ async function startSource(p: Profile): Promise<void> {
     },
   });
   try {
-    stream = await navigator.mediaDevices.getUserMedia(constraints(init.deviceId));
+    stream = await navigator.mediaDevices.getUserMedia(constraints(settings.deviceId));
   } catch (err) {
-    if (!init.deviceId) throw err;
+    if (!settings.deviceId) throw err;
     stream = await navigator.mediaDevices.getUserMedia(constraints());
   }
   video.srcObject = stream;
@@ -117,11 +182,13 @@ function liveHandler(now: number, meta: VideoFrameCallbackMetadata): void {
   inferenceStats.record(inferenceMs);
   if (result.landmarks.length === 0) {
     activeSlots = new Set();
+    maybeSendPreview(now);
     return;
   }
   const t = captureEpoch(now, meta);
   const hands = toSamples(result, t);
   api.sendFrame({ t, inferenceMs, hands } satisfies HandFrame);
+  maybeSendPreview(now);
 }
 
 function toSamples(result: HandLandmarkerResult, t: number): HandSample[] {
@@ -242,7 +309,7 @@ async function tryCreate(d: DelegateName, hands: 1 | 2): Promise<HandLandmarker 
 }
 
 async function runBenchmark(): Promise<ProfileSelection> {
-  status('Benchmark: pon una o dos manos frente a la cámara y muévelas (unos segundos)…');
+  status('Benchmark: pon una o dos manos frente a la cámara y muévelas unos segundos…');
   const [gpu, cpu] = await Promise.all([tryCreate('GPU', 2), tryCreate('CPU', 2)]);
   const list = [
     ...(gpu ? [{ delegate: 'GPU' as const, hands: 2 as const, lm: gpu }] : []),
@@ -255,7 +322,7 @@ async function runBenchmark(): Promise<ProfileSelection> {
   let oneHand: DelegateMeasurement | undefined;
   const best = [...pass.measurements].sort((a, b) => a.p95Ms - b.p95Ms)[0];
   if (reliable && best && best.p95Ms > 40) {
-    status('El equipo va justo con 2 manos: midiendo con 1 mano…');
+    status('Con 2 manos va justo: midiendo con 1 mano…');
     const one = best.delegate === 'GPU' ? await tryCreate('GPU', 1) : await tryCreate('CPU', 1);
     if (one) {
       const p = await measure([{ delegate: best.delegate, hands: 1, lm: one }], 30, 12000);
@@ -276,7 +343,7 @@ async function applySelection(selection: ProfileSelection): Promise<void> {
     nextProfile.camera.frameRate !== profile.camera.frameRate;
   profile = nextProfile;
   delegate = selection.delegate;
-  numHands = init.forceHands ?? selection.numHands;
+  numHands = effectiveHands() ?? selection.numHands;
   if (cameraChanged) await startSource(profile);
   landmarker?.close();
   landmarker = await tryCreate(delegate, numHands);
@@ -296,10 +363,11 @@ async function forcedSelection(name: Profile['name']): Promise<ProfileSelection>
   return {
     profile: name,
     delegate: probe ? 'GPU' : 'CPU',
-    numHands: init.forceHands ?? 2,
-    meetsMinimum: true,
-    reliable: true,
-    reason: `Profile "${name}" forced from the command line (no benchmark, performance not verified).`,
+    numHands: effectiveHands() ?? 2,
+    meetsMinimum: false,
+    reliable: false,
+    forced: true,
+    reason: `Perfil "${name}" fijado a mano: no se hizo benchmark, el rendimiento no está verificado.`,
     measurements: [],
   };
 }
@@ -311,7 +379,7 @@ async function runAndApplyBenchmark(): Promise<void> {
     frameHandler = null;
     await applySelection(await runBenchmark());
   } catch (err) {
-    status(`Benchmark failed: ${String(err)}`);
+    status(`El benchmark falló: ${String(err)}`);
   } finally {
     benchmarking = false;
   }
@@ -328,6 +396,7 @@ function startStatsReporting(): void {
       numHands,
       source: sourceLabel,
       resolution: `${video.videoWidth}x${video.videoHeight}`,
+      paused,
     });
   }, 500);
 }
@@ -354,24 +423,27 @@ function setPaused(next: boolean): void {
 
 async function main(): Promise<void> {
   init = await api.getInit();
+  settings = init.settings;
+  applySmoothing();
+  api.onSettings(applySettings);
   api.onCommand((cmd) => {
-    if (cmd.type === 'set-camera') {
-      init = { ...init, deviceId: cmd.deviceId };
-      if (!paused) void startSource(profile);
-    } else if (cmd.type === 'rerun-benchmark') {
+    if (cmd.type === 'rerun-benchmark') {
       if (!paused) void runAndApplyBenchmark();
     } else if (cmd.type === 'set-paused') {
       setPaused(cmd.paused);
+    } else if (cmd.type === 'set-preview') {
+      previewOn = cmd.enabled;
     }
   });
   try {
     await startSource(profile);
     ensureLoop();
     startStatsReporting();
-    if (init.profileOverride) await applySelection(await forcedSelection(init.profileOverride));
+    const forced = effectiveProfile();
+    if (forced) await applySelection(await forcedSelection(forced));
     else await runAndApplyBenchmark();
   } catch (err) {
-    status(`Tracker error: ${String(err)}`);
+    status(`Error del tracker: ${String(err)}`);
   }
 }
 

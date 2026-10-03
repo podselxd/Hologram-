@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'" />
+<title>Hologram · Ajustes</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: #111b2e; --panel-2: #16233b; --line: #263a5c;
+    --text: #e2eefc; --muted: #9db3d0; --accent: #7fd4ff; --accent-strong: #2f9bff;
+    --ok: #6ee7a8; --warn: #fbbf24; --bad: #ff8a8a; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  body { padding: 16px 20px 28px; max-width: 1180px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .dot { width: 18px; height: 18px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff, #6fd0ff 40%, #2f7bff 70%, #0f4aa8); }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .3px; }
+  .ver { color: var(--muted); font-size: 12px; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--accent); }
+  .pill { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; }
+  .pill.ok { color: var(--ok); border-color: #1f6b4a; }
+  .pill.off { color: var(--warn); border-color: #7a5b12; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .wide { grid-column: 1 / -1; }
+  .live { display: grid; gap: 14px; grid-template-columns: minmax(280px, 3fr) minmax(220px, 2fr); }
+  @media (max-width: 760px) { .live { grid-template-columns: 1fr; } }
+  #view { width: 100%; aspect-ratio: 4 / 3; display: block; border-radius: 8px; background: #050a14; border: 1px solid var(--line); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .field { display: grid; gap: 4px; margin-bottom: 12px; }
+  label, legend { font-weight: 600; }
+  .hint { color: var(--muted); font-size: 12px; font-weight: 400; }
+  select, button, input[type="range"] { font: inherit; }
+  select { width: 100%; padding: 7px 8px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
+  button { padding: 7px 12px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #04101f; font-weight: 700; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent-strong); }
+  fieldset { border: 0; margin: 0 0 12px; padding: 0; }
+  .colors { display: flex; flex-wrap: wrap; gap: 8px; }
+  .colors label { display: flex; align-items: center; gap: 6px; font-weight: 400; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+  .colors input { accent-color: var(--accent-strong); }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; font-weight: 400; }
+  .check input { margin-top: 4px; accent-color: var(--accent-strong); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 3px 8px 3px 0; font-weight: 400; vertical-align: top; }
+  kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-family: Consolas, monospace; font-size: 12px; }
+  .bench { margin-top: 8px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  .sr { position: absolute; left: -9999px; }
+  .msg { color: var(--muted); }
+  .msg.bad { color: var(--bad); }
+  .msg.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Hologram</h1><span class="ver" id="ver"></span></div>
+  <span class="pill" id="camPill">Cámara: …</span>
+  <button id="btnOverlay" type="button">Ocultar overlay</button>
+  <button id="btnQuit" type="button" class="danger">Salir de Hologram</button>
+</header>
+<div id="live-region" class="sr" role="status" aria-live="polite"></div>
+
+<main class="grid">
+  <section class="card wide" aria-labelledby="h-live">
+    <h2 id="h-live">Vista en vivo de tus manos</h2>
+    <div class="live">
+      <canvas id="view" width="640" height="480" role="img" aria-label="Vista en vivo: sin manos detectadas"></canvas>
+      <div>
+        <dl>
+          <dt>Manos</dt><dd id="handsInfo">0 detectadas</dd>
+          <dt>Confianza</dt><dd id="confInfo">—</dd>
+          <dt>Perfil</dt><dd id="sProfile">—</dd>
+          <dt>Cámara</dt><dd id="sCamera">—</dd>
+          <dt>Inferencia</dt><dd id="sInfer">—</dd>
+          <dt>Render</dt><dd id="sRender">—</dd>
+          <dt>Latencia est.</dt><dd id="sLatency">—</dd>
+          <dt>Manos perdidas</dt><dd id="sLost">—</dd>
+        </dl>
+        <p class="check" style="margin-top:12px">
+          <input type="checkbox" id="previewOn" />
+          <label for="previewOn" style="font-weight:400">Mostrar también la imagen de la cámara<br /><span class="hint">Solo mientras esta ventana está abierta; sirve para revisar encuadre y luz. Se procesa en tu equipo, no se guarda.</span></label>
+        </p>
+        <p class="msg" id="sStatus" aria-live="polite"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-cam">
+    <h2 id="h-cam">Cámara y rendimiento</h2>
+    <div class="field">
+      <label for="camera">Cámara</label>
+      <select id="camera"></select>
+    </div>
+    <div class="field">
+      <label for="profile">Perfil de calidad</label>
+      <select id="profile">
+        <option value="auto">Automático (según el benchmark)</option>
+        <option value="low">Bajo: 30 FPS, sin efectos</option>
+        <option value="medium">Medio: 60 FPS, brillo</option>
+        <option value="high">Alto: 720p a 60 FPS, brillo y estela</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="hands">Manos a detectar</label>
+      <select id="hands">
+        <option value="auto">Automático</option>
+        <option value="2">2 manos</option>
+        <option value="1">1 mano (más ligero)</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="btnBench" type="button">Repetir benchmark</button>
+      <span class="hint">Pon las manos frente a la cámara unos segundos.</span>
+    </div>
+    <div class="bench" id="bench" aria-live="polite"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-look">
+    <h2 id="h-look">Apariencia</h2>
+    <fieldset>
+      <legend>Color de los puntos</legend>
+      <div class="colors" id="colors">
+        <label><input type="radio" name="color" value="azul" /><span class="swatch" style="background:#2f9bff"></span>Azul</label>
+        <label><input type="radio" name="color" value="cian" /><span class="swatch" style="background:#22d3ee"></span>Cian</label>
+        <label><input type="radio" name="color" value="violeta" /><span class="swatch" style="background:#a78bfa"></span>Violeta</label>
+        <label><input type="radio" name="color" value="verde" /><span class="swatch" style="background:#4ade80"></span>Verde</label>
+      </div>
+    </fieldset>
+    <div class="field">
+      <label for="dotSize">Tamaño de los puntos <span class="hint" id="dotSizeVal"></span></label>
+      <input type="range" id="dotSize" min="0.6" max="1.8" step="0.05" />
+    </div>
+    <div class="field">
+      <label for="smoothing">Suavizado <span class="hint" id="smoothingVal"></span></label>
+      <input type="range" id="smoothing" min="0" max="1" step="0.05" />
+      <span class="hint">Más suavizado reduce el temblor pero responde con algo de retraso.</span>
+    </div>
+    <label class="check"><input type="checkbox" id="mirror" /><span>Efecto espejo<br /><span class="hint">Mover la mano a la derecha mueve los puntos a la derecha.</span></span></label>
+    <label class="check"><input type="checkbox" id="hud" /><span>Mostrar el HUD de diagnóstico sobre el escritorio</span></label>
+  </section>
+
+  <section class="card" aria-labelledby="h-upd">
+    <h2 id="h-upd">Actualizaciones</h2>
+    <p id="updText" class="msg"></p>
+    <div class="row">
+      <button id="btnUpd" type="button"></button>
+      <button id="btnRollback" type="button" hidden>Volver a la versión anterior</button>
+    </div>
+    <p class="hint" style="margin-top:10px">El .exe no está firmado: una actualización descargada se verifica contra su SHA-256, pero eso no prueba quién la publicó.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-sys">
+    <h2 id="h-sys">Sistema y atajos</h2>
+    <label class="check"><input type="checkbox" id="safeRender" /><span>Modo seguro<br /><span class="hint">Desactiva la aceleración por hardware (usa solo CPU, más lento). Úsalo si el overlay parpadea. Hay que cerrar y abrir la app.</span></span></label>
+    <table aria-label="Atajos de teclado globales">
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></th><td>Abrir esta ventana</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></th><td>Mostrar u ocultar el overlay (apaga la cámara)</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd></th><td>Mostrar u ocultar el HUD</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></th><td>Cambiar de cámara</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></th><td>Repetir el benchmark</td></tr>
+      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd></th><td>Salir</td></tr>
+    </table>
+  </section>
+</main>
+<script src="settings.js"></script>
+</body>
+</html>

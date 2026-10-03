@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import type { UpdateAction, UpdateSnapshot } from '../shared/types';
 import { buildSwapScript, downloadAndVerify, fetchLatest, isNewer, type ReleaseInfo } from './updater';
 
 type State =
@@ -136,6 +137,25 @@ export class UpdateController {
     if (!this.canRollback) return;
     // The current exe becomes the "undone" copy so the swap can be reversed again.
     this.swapAndQuit(this.backupPath, path.join(this.dir, 'Hologram.undone.exe'));
+  }
+
+  snapshot(): UpdateSnapshot {
+    const s = this.state;
+    return {
+      enabled: this.enabled,
+      version: app.getVersion(),
+      state: s.kind,
+      ...('info' in s ? { latest: s.info.version } : {}),
+      canRollback: this.canRollback,
+      ...(s.kind === 'error' ? { message: s.message } : {}),
+    };
+  }
+
+  run(action: UpdateAction): void {
+    if (action === 'check') void this.check(true);
+    else if (action === 'download') void this.download();
+    else if (action === 'apply') this.applyAndRestart();
+    else this.rollback();
   }
 
   menuItems(): MenuItemConstructorOptions[] {

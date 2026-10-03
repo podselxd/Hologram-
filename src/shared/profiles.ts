@@ -58,7 +58,7 @@ export function chooseProfile(input: BenchmarkInput): ProfileSelection {
       numHands: 2,
       meetsMinimum: false,
       reliable: false,
-      reason: 'No measurements available; using the safest profile.',
+      reason: 'No hay mediciones; se usa el perfil más seguro.',
       measurements,
     };
   }
@@ -71,8 +71,8 @@ export function chooseProfile(input: BenchmarkInput): ProfileSelection {
       meetsMinimum: false,
       reliable: false,
       reason:
-        'Benchmark ran without hands in view, so inference time is under-estimated. ' +
-        'Using the low profile; re-run the benchmark with your hands in front of the camera.',
+        'El benchmark se hizo sin manos a la vista, así que el tiempo de inferencia sale subestimado. ' +
+        'Se usa el perfil bajo; repítelo con las manos frente a la cámara.',
       measurements,
     };
   }
@@ -85,7 +85,7 @@ export function chooseProfile(input: BenchmarkInput): ProfileSelection {
       numHands: 2,
       meetsMinimum: true,
       reliable: true,
-      reason: `${best.delegate} p95 ${best.p95Ms.toFixed(1)} ms with 2 hands -> ${profile}.`,
+      reason: `${best.delegate}: p95 ${best.p95Ms.toFixed(1)} ms con 2 manos → perfil ${profile}.`,
       measurements,
     };
   }
@@ -99,8 +99,8 @@ export function chooseProfile(input: BenchmarkInput): ProfileSelection {
     meetsMinimum: oneOk,
     reliable: true,
     reason: oneOk
-      ? `2 hands too slow (p95 ${best.p95Ms.toFixed(1)} ms); 1 hand p95 ${one.p95Ms.toFixed(1)} ms -> low, 1 hand.`
-      : `Too slow even in the low profile (best p95 ${(one ?? best).p95Ms.toFixed(1)} ms): this machine does not meet the minimum.`,
+      ? `Con 2 manos va lento (p95 ${best.p95Ms.toFixed(1)} ms); con 1 mano p95 ${one.p95Ms.toFixed(1)} ms → perfil bajo, 1 mano.`
+      : `Va lento incluso en el perfil bajo (mejor p95 ${(one ?? best).p95Ms.toFixed(1)} ms): este equipo no cumple el mínimo.`,
     measurements,
   };
 }

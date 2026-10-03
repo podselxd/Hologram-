@@ -1,7 +1,9 @@
+import { paletteFor, type Palette } from '../../shared/appearance';
 import { FrameStats } from '../../shared/frameStats';
 import { FINGERTIPS, HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { HandPredictor } from '../../shared/predictor';
 import { PROFILES } from '../../shared/profiles';
+import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
 import { LANDMARK_COUNT, MAX_HANDS, type HandFrame, type Profile, type RenderStats, type TrackerStats } from '../../shared/types';
 
 const api = window.hologram;
@@ -45,15 +47,21 @@ function makeSprite(size: number, stops: Array<[number, string]>): HTMLCanvasEle
   g.fillRect(0, 0, size, size);
   return c;
 }
-// Saturated blue with a darker rim: stays readable on white windows as well as dark ones.
-const glowSprite = makeSprite(64, [[0, 'rgba(60,160,255,0.35)'], [0.5, 'rgba(40,130,255,0.12)'], [1, 'rgba(40,130,255,0)']]);
-const coreSprite = makeSprite(32, [
-  [0, 'rgba(245,252,255,1)'],
-  [0.3, 'rgba(110,205,255,0.98)'],
-  [0.62, 'rgba(40,140,255,0.95)'],
-  [0.85, 'rgba(15,70,170,0.85)'],
-  [1, 'rgba(15,70,170,0)'],
-]);
+let settings: Settings = DEFAULT_SETTINGS;
+let palette: Palette = paletteFor(settings.color);
+let glowSprite = makeSprite(64, palette.glowStops);
+let coreSprite = makeSprite(32, palette.coreStops);
+
+function applySettings(next: Settings): void {
+  const colorChanged = next.color !== settings.color;
+  settings = next;
+  hud.classList.toggle('hidden', !settings.hud);
+  if (colorChanged) {
+    palette = paletteFor(settings.color);
+    glowSprite = makeSprite(64, palette.glowStops);
+    coreSprite = makeSprite(32, palette.coreStops);
+  }
+}
 
 // ---- sizing --------------------------------------------------------------
 function resize(): void {
@@ -76,7 +84,7 @@ api.onFrame((frame: HandFrame) => {
     for (let i = 0; i < LANDMARK_COUNT; i++) {
       const lm = hand.landmarks[i];
       if (!lm) continue;
-      const [x, y] = toScreen(lm.x, lm.y, width, height);
+      const [x, y] = toScreen(lm.x, lm.y, width, height, settings.mirror);
       incoming[i * 2] = x;
       incoming[i * 2 + 1] = y;
     }
@@ -87,13 +95,11 @@ api.onStats((s) => (trackerStats = s));
 api.onStatus((m) => (status = m));
 api.onProfile((sel) => {
   profile = PROFILES[sel.profile];
-  profileLabel = `${sel.profile} (${sel.delegate}, ${sel.numHands} mano${sel.numHands > 1 ? 's' : ''})${sel.meetsMinimum ? '' : ' [bajo mínimo]'}`;
+  profileLabel = `${sel.profile} (${sel.delegate}, ${sel.numHands} mano${sel.numHands > 1 ? 's' : ''})${sel.forced ? ' [fijado, sin verificar]' : sel.meetsMinimum ? '' : ' [bajo mínimo]'}`;
   degradeLevel = 0;
   resize();
 });
-api.onCommand((c) => {
-  if (c.type === 'toggle-hud') hud.classList.toggle('hidden');
-});
+api.onSettings(applySettings);
 
 // ---- drawing -------------------------------------------------------------
 function pointRadius(i: number): number {
@@ -114,21 +120,21 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
   }
   ctx.lineCap = 'round';
   if (glow) {
-    ctx.strokeStyle = 'rgba(40,130,255,0.22)';
+    ctx.strokeStyle = palette.halo;
     ctx.lineWidth = 8;
     ctx.stroke();
   }
-  ctx.strokeStyle = 'rgba(10,50,120,0.55)';
+  ctx.strokeStyle = palette.rim;
   ctx.lineWidth = 3;
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(130,215,255,0.95)';
+  ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
   for (let i = 0; i < LANDMARK_COUNT; i++) {
     const x = pts[i * 2] as number;
     const y = pts[i * 2 + 1] as number;
-    const r = pointRadius(i);
+    const r = pointRadius(i) * settings.dotSize;
     if (glow) ctx.drawImage(glowSprite, x - r * 3, y - r * 3, r * 6, r * 6);
     ctx.drawImage(coreSprite, x - r, y - r, r * 2, r * 2);
   }
@@ -148,7 +154,7 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
       for (let j = 1; j < fill; j++) {
         const i0 = (k * TRAIL + ((head - j + TRAIL) % TRAIL)) * 2;
         const i1 = (k * TRAIL + ((head - j + 1 + TRAIL) % TRAIL)) * 2;
-        ctx.strokeStyle = `rgba(70,170,255,${(0.55 * (1 - j / fill)).toFixed(3)})`;
+        ctx.strokeStyle = palette.trail(0.55 * (1 - j / fill));
         ctx.beginPath();
         ctx.moveTo(buf[i0] as number, buf[i0 + 1] as number);
         ctx.lineTo(buf[i1] as number, buf[i1 + 1] as number);
@@ -218,6 +224,8 @@ function renderStats(): RenderStats {
     frames: s.count,
     drawAvgMs: drawStats.summary().avg,
     degradeLevel,
+    handsLost: handsLostRecently(performance.now()),
+    latencyMs,
   };
 }
 
@@ -286,8 +294,6 @@ setInterval(() => api.sendRenderStats(renderStats()), 2000);
 const devBg = new URLSearchParams(location.search).get('bg');
 if (devBg) document.body.style.background = devBg;
 
-void api.getInit().then((init) => {
-  if (!init.hud) hud.classList.add('hidden');
-});
+void api.getInit().then((init) => applySettings(init.settings));
 resize();
 requestAnimationFrame(frame);

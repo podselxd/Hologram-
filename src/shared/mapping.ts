@@ -3,8 +3,8 @@
  * mirrored horizontally, so the overlay behaves like a mirror.
  * (Phase 2 replaces this with a calibrated control zone.)
  */
-export function toScreen(x01: number, y01: number, width: number, height: number): [number, number] {
-  return [(1 - x01) * width, y01 * height];
+export function toScreen(x01: number, y01: number, width: number, height: number, mirror = true): [number, number] {
+  return [(mirror ? 1 - x01 : x01) * width, y01 * height];
 }
 
 /** MediaPipe hand skeleton as pairs of landmark indices. */

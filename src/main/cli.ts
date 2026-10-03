@@ -4,12 +4,11 @@ export interface CliOptions {
   videoPath?: string;
   profile?: ProfileName;
   hands?: 1 | 2;
-  hud: boolean;
   safeRender: boolean;
 }
 
 export function parseCli(argv: string[]): CliOptions {
-  const opts: CliOptions = { hud: true, safeRender: false };
+  const opts: CliOptions = { safeRender: false };
   for (const arg of argv) {
     if (arg.startsWith('--video=')) opts.videoPath = arg.slice('--video='.length);
     else if (arg.startsWith('--profile=')) {
@@ -19,8 +18,7 @@ export function parseCli(argv: string[]): CliOptions {
       const v = arg.slice('--hands='.length);
       if (v === '1') opts.hands = 1;
       else if (v === '2') opts.hands = 2;
-    } else if (arg === '--no-hud') opts.hud = false;
-    else if (arg === '--safe-render') opts.safeRender = true;
+    } else if (arg === '--safe-render') opts.safeRender = true;
   }
   return opts;
 }

@@ -9,10 +9,16 @@ export class OneEuroFilter {
   private initialised = false;
 
   constructor(
-    private readonly minCutoff = 1.2,
-    private readonly beta = 0.05,
+    private minCutoff = 1.2,
+    private beta = 0.05,
     private readonly dCutoff = 1.0,
   ) {}
+
+  /** Changes the smoothing live without losing the filter state. */
+  configure(minCutoff: number, beta: number): void {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+  }
 
   reset(): void {
     this.initialised = false;

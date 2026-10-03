@@ -4,11 +4,11 @@ import { trayIconPixels } from '../src/main/iconPixels';
 
 describe('parseCli', () => {
   it('has safe defaults', () => {
-    expect(parseCli([])).toEqual({ hud: true, safeRender: false });
+    expect(parseCli([])).toEqual({ safeRender: false });
   });
   it('reads every option', () => {
-    const o = parseCli(['--video=a.webm', '--profile=high', '--hands=1', '--no-hud', '--safe-render']);
-    expect(o).toEqual({ videoPath: 'a.webm', profile: 'high', hands: 1, hud: false, safeRender: true });
+    const o = parseCli(['--video=a.webm', '--profile=high', '--hands=1', '--safe-render']);
+    expect(o).toEqual({ videoPath: 'a.webm', profile: 'high', hands: 1, safeRender: true });
   });
   it('ignores invalid values', () => {
     const o = parseCli(['--profile=ultra', '--hands=3']);

@@ -48,6 +48,25 @@ npm install
 npm start          # descarga el modelo la primera vez, compila y abre el overlay
 ```
 
+## Ventana de ajustes
+
+Se abre sola al iniciar, al hacer clic en el icono de la bandeja, con `Ctrl+Alt+S` o al volver a lanzar el
+`.exe`. Cerrarla **no** cierra la app. Contiene:
+
+- **Vista en vivo de tus manos:** el esqueleto de cada mano en tiempo real (con el efecto espejo y los colores
+  elegidos) y, si lo activas, también la imagen de la cámara para revisar encuadre y luz. La imagen solo se
+  procesa mientras la ventana está abierta, a baja resolución, y no se guarda.
+- **Estado:** perfil y veredicto del benchmark, FPS y resolución de la cámara, tiempo de inferencia, FPS y
+  percentil 99 del render, latencia estimada y manos perdidas en los últimos 5 s.
+- **Cámara y rendimiento:** elegir cámara, perfil (automático, bajo, medio, alto), 1 o 2 manos y repetir el
+  benchmark con sus mediciones.
+- **Apariencia:** color (azul, cian, violeta, verde), tamaño de los puntos, suavizado (menos temblor frente a
+  menos retraso), efecto espejo y HUD.
+- **Actualizaciones**, **modo seguro** y la lista de atajos.
+
+Los cambios se aplican al momento y se guardan en `settings.json`. Teclado: todo es navegable con Tab, con foco
+visible y etiquetas en cada control.
+
 **Segundo plano:** la app deja un icono en la bandeja del sistema (junto al reloj). Clic en el icono: mostrar u
 ocultar el overlay. Clic derecho: HUD, cambiar de cámara, repetir benchmark, modo seguro y **Salir de Hologram**.
 Con el overlay oculto la **cámara se apaga** (no se captura nada) y se reactiva al mostrarlo.
@@ -65,7 +84,7 @@ menú de la bandeja y reinicia la app: desactiva la aceleración por hardware (l
 | `Ctrl+Alt+Q` | Salir |
 
 Opciones: `npm start -- --video=clip.webm` (usa un video en vez de la cámara), `--profile=low|medium|high`
-(salta el benchmark), `--hands=1|2`, `--no-hud`.
+(salta el benchmark; el perfil queda marcado como "sin verificar"), `--hands=1|2`, `--safe-render`.
 
 ## Cómo se adapta a tu equipo
 
@@ -115,10 +134,21 @@ calibración).
 
 ## Privacidad
 
-Todo se procesa en local. No hay red en tiempo de ejecución (el modelo se descarga una vez con
-`npm run fetch-model`), no se graba video y la cámara solo la abre la ventana oculta del tracker. La app solo
-concede el permiso de cámara a esa ventana. Ventanas con `contextIsolation`, `sandbox`, sin `nodeIntegration`
-y con política de contenido (CSP).
+El procesamiento de la cámara es local: no se graba ni se guarda video, y la cámara solo la abre la ventana
+oculta del tracker (el permiso de cámara se concede únicamente a esa ventana). Con el overlay oculto la cámara
+se apaga.
+
+Conexiones de red de la app:
+- **Actualizaciones:** consulta `api.github.com` (repo público) al abrir y cada 6 h, y descarga desde
+  `github.com` solo si tú lo pides. Se puede ver en `update.log`.
+- **MediaPipe** intenta enviar un registro de uso a `odml.pa.googleapis.com`. La política de contenido (CSP) de
+  la app **lo bloquea** (se ve como error de CSP en el log de depuración): no sale nada. Si cambias la CSP,
+  vuelve a comprobarlo.
+- El modelo de manos se descarga una vez con `npm run fetch-model` (al construir, no al ejecutar el `.exe`).
+
+Seguridad: ventanas con `contextIsolation`, `sandbox`, sin `nodeIntegration` y con CSP. Los mensajes entre
+procesos se validan y se comprueba qué ventana los envía (solo la ventana de ajustes puede cambiar ajustes o
+pedir acciones).
 
 ## Desarrollo
 

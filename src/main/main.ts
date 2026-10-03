@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CH } from '../shared/api';
+import { applyPatch, sanitizePatch } from '../shared/settings';
 import type {
   CameraInfo,
   Command,
@@ -25,10 +26,11 @@ import type {
   RenderStats,
   TrackerStats,
 } from '../shared/types';
+import { isPreviewImage, isSettingsCommand, isUpdateAction } from '../shared/validate';
 import { parseCli } from './cli';
 import { trayIconPixels } from './iconPixels';
-import { UpdateController } from './updateController';
 import { loadSettings, saveSettings, writeReport } from './settings';
+import { UpdateController } from './updateController';
 
 const SCHEME = 'app';
 const HOST = 'hologram';
@@ -46,17 +48,19 @@ let tray: Tray | null = null;
 let updater: UpdateController | null = null;
 let overlay: BrowserWindow | null = null;
 let tracker: BrowserWindow | null = null;
+let settingsWin: BrowserWindow | null = null;
 let settings = loadSettings();
-
-// Must happen before the app is ready. Workaround if the transparent overlay flickers on some GPUs/drivers.
-if (cli.safeRender || settings.safeRender) app.disableHardwareAcceleration();
 let cameras: CameraInfo[] = [];
 let lastSelection: ProfileSelection | null = null;
 let lastTrackerStats: TrackerStats | null = null;
 let lastRenderStats: RenderStats | null = null;
+let lastStatus = '';
+let previewWanted = false;
 
-const root = (): string => app.getAppPath();
-const dist = (): string => path.join(root(), 'dist');
+// Must happen before the app is ready. Workaround if the transparent overlay flickers on some GPUs/drivers.
+if (cli.safeRender || settings.safeRender) app.disableHardwareAcceleration();
+
+const dist = (): string => path.join(app.getAppPath(), 'dist');
 
 function resolveInside(base: string, rel: string): string | null {
   const abs = path.resolve(base, rel);
@@ -127,8 +131,54 @@ function createTracker(): void {
   void tracker.loadURL(`${SCHEME}://${HOST}/tracker.html`);
 }
 
+function openSettings(): void {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    settingsWin.show();
+    settingsWin.focus();
+    return;
+  }
+  settingsWin = new BrowserWindow({
+    width: 1000,
+    height: 740,
+    minWidth: 780,
+    minHeight: 560,
+    title: 'Hologram',
+    backgroundColor: '#0b1220',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: webPreferences(),
+  });
+  const win = settingsWin;
+  win.once('ready-to-show', () => win.show());
+  win.webContents.on('did-finish-load', pushSnapshotToSettings);
+  win.on('closed', () => {
+    settingsWin = null;
+    previewWanted = false;
+    send(tracker, CH.command, { type: 'set-preview', enabled: false } satisfies Command);
+  });
+  if (debug) win.webContents.on('console-message', (e) => log('settings console:', e.message));
+  void win.loadURL(`${SCHEME}://${HOST}/settings.html`);
+}
+
 function send(win: BrowserWindow | null, channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
+
+/** The settings window is only fed while it is actually on screen. */
+function sendToSettings(channel: string, payload: unknown): void {
+  if (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible() && !settingsWin.isMinimized()) {
+    settingsWin.webContents.send(channel, payload);
+  }
+}
+
+function pushSnapshotToSettings(): void {
+  send(settingsWin, CH.cameras, cameras);
+  if (lastTrackerStats) send(settingsWin, CH.stats, lastTrackerStats);
+  if (lastSelection) send(settingsWin, CH.profile, lastSelection);
+  if (lastRenderStats) send(settingsWin, CH.renderStats, lastRenderStats);
+  if (lastStatus) send(settingsWin, CH.status, lastStatus);
+  if (updater) send(settingsWin, CH.update, updater.snapshot());
 }
 
 function broadcast(command: Command): void {
@@ -136,40 +186,103 @@ function broadcast(command: Command): void {
   send(tracker, CH.command, command);
 }
 
+function broadcastSettings(): void {
+  send(overlay, CH.settings, settings);
+  send(tracker, CH.settings, settings);
+  send(settingsWin, CH.settings, settings);
+}
+
+function patchSettings(raw: unknown): void {
+  const patch = sanitizePatch(raw);
+  if (Object.keys(patch).length === 0) return;
+  const before = settings;
+  settings = applyPatch(settings, patch);
+  saveSettings(settings);
+  broadcastSettings();
+  if (settings.safeRender !== before.safeRender) {
+    new Notification({
+      title: 'Hologram',
+      body: `Modo seguro ${settings.safeRender ? 'activado' : 'desactivado'}. Cierra y vuelve a abrir Hologram para aplicarlo.`,
+    }).show();
+  }
+  refreshTray();
+}
+
+const isFrom = (win: BrowserWindow | null, sender: Electron.WebContents): boolean =>
+  win !== null && !win.isDestroyed() && win.webContents === sender;
+
 function registerIpc(): void {
   ipcMain.handle(CH.init, (): InitConfig => ({
     mode: cli.videoPath ? 'video' : 'camera',
-    deviceId: settings.deviceId,
+    settings,
     profileOverride: cli.profile,
     forceHands: cli.hands,
-    hud: cli.hud,
   }));
+  ipcMain.handle(CH.getSettings, () => settings);
+
+  // ---- settings window -> main (sender-checked; payloads sanitised) -------------------------
+  ipcMain.on(CH.patchSettings, (e, raw: unknown) => {
+    if (isFrom(settingsWin, e.sender)) patchSettings(raw);
+  });
+  ipcMain.on(CH.settingsCommand, (e, cmd: unknown) => {
+    if (!isFrom(settingsWin, e.sender) || !isSettingsCommand(cmd)) return;
+    if (cmd === 'rerun-benchmark') broadcast({ type: 'rerun-benchmark' });
+    else if (cmd === 'toggle-overlay') toggleOverlay();
+    else app.quit();
+  });
+  ipcMain.on(CH.setPreview, (e, enabled: unknown) => {
+    if (!isFrom(settingsWin, e.sender) || typeof enabled !== 'boolean') return;
+    previewWanted = enabled;
+    send(tracker, CH.command, { type: 'set-preview', enabled } satisfies Command);
+  });
+  ipcMain.on(CH.updateAction, (e, action: unknown) => {
+    if (isFrom(settingsWin, e.sender) && isUpdateAction(action)) updater?.run(action);
+  });
+
+  // ---- tracker -> main -> overlay / settings -------------------------------------------------
   let framesRelayed = 0;
-  ipcMain.on(CH.frame, (_e, frame: HandFrame) => {
+  ipcMain.on(CH.frame, (e, frame: HandFrame) => {
+    if (!isFrom(tracker, e.sender)) return;
     if (++framesRelayed % 30 === 1) log(`frames relayed: ${framesRelayed}, hands in last: ${frame.hands.length}`);
     send(overlay, CH.frame, frame);
+    sendToSettings(CH.frame, frame);
   });
-  ipcMain.on(CH.stats, (_e, stats: TrackerStats) => {
+  ipcMain.on(CH.preview, (e, image: unknown) => {
+    if (!isFrom(tracker, e.sender) || !previewWanted || !isPreviewImage(image)) return;
+    sendToSettings(CH.preview, image);
+  });
+  ipcMain.on(CH.stats, (e, stats: TrackerStats) => {
+    if (!isFrom(tracker, e.sender)) return;
     lastTrackerStats = stats;
     log('tracker:', JSON.stringify(stats));
     send(overlay, CH.stats, stats);
+    sendToSettings(CH.stats, stats);
   });
-  ipcMain.on(CH.status, (_e, message: string) => {
-    log('status:', message);
-    send(overlay, CH.status, message);
+  ipcMain.on(CH.status, (e, message: string) => {
+    if (!isFrom(tracker, e.sender)) return;
+    lastStatus = String(message);
+    log('status:', lastStatus);
+    send(overlay, CH.status, lastStatus);
+    sendToSettings(CH.status, lastStatus);
   });
-  ipcMain.on(CH.profile, (_e, selection: ProfileSelection) => {
+  ipcMain.on(CH.profile, (e, selection: ProfileSelection) => {
+    if (!isFrom(tracker, e.sender)) return;
     lastSelection = selection;
     log('profile:', JSON.stringify(selection));
     writeReport('benchmark.json', { at: new Date().toISOString(), ...selection });
     send(overlay, CH.profile, selection);
+    sendToSettings(CH.profile, selection);
   });
-  ipcMain.on(CH.cameras, (_e, list: CameraInfo[]) => {
-    cameras = list;
+  ipcMain.on(CH.cameras, (e, list: CameraInfo[]) => {
+    if (!isFrom(tracker, e.sender) || !Array.isArray(list)) return;
+    cameras = list.filter((c) => typeof c?.deviceId === 'string' && typeof c?.label === 'string');
+    send(settingsWin, CH.cameras, cameras);
   });
-  ipcMain.on(CH.renderStats, (_e, stats: RenderStats) => {
+  ipcMain.on(CH.renderStats, (e, stats: RenderStats) => {
+    if (!isFrom(overlay, e.sender)) return;
     lastRenderStats = stats;
     log('render:', JSON.stringify(stats));
+    sendToSettings(CH.renderStats, stats);
   });
 }
 
@@ -186,16 +299,11 @@ function toggleOverlay(): void {
   setOverlayVisible(!(overlay?.isVisible() ?? false));
 }
 
-function toggleSafeRender(): void {
-  settings = { ...settings, safeRender: !settings.safeRender };
-  saveSettings(settings);
-  new Notification({
-    title: 'Hologram',
-    body: settings.safeRender
-      ? 'Modo seguro activado. Cierra y vuelve a abrir Hologram para aplicarlo.'
-      : 'Modo seguro desactivado. Cierra y vuelve a abrir Hologram para aplicarlo.',
-  }).show();
-  refreshTray();
+function cycleCamera(): void {
+  if (cameras.length < 2) return;
+  const i = cameras.findIndex((c) => c.deviceId === settings.deviceId);
+  const next = cameras[(i + 1) % cameras.length];
+  if (next) patchSettings({ deviceId: next.deviceId });
 }
 
 function refreshTray(): void {
@@ -203,17 +311,19 @@ function refreshTray(): void {
   const visible = overlay?.isVisible() ?? false;
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: 'Abrir ajustes', click: openSettings },
+      { type: 'separator' },
       ...(updater ? [...updater.menuItems(), { type: 'separator' as const }] : []),
       { label: visible ? 'Ocultar overlay (apaga la cámara)' : 'Mostrar overlay', click: toggleOverlay },
-      { label: 'Mostrar / ocultar HUD', click: () => broadcast({ type: 'toggle-hud' }) },
+      { label: 'Mostrar / ocultar HUD', click: () => patchSettings({ hud: !settings.hud }) },
       { label: 'Cambiar de cámara', click: cycleCamera },
       { label: 'Repetir benchmark', click: () => broadcast({ type: 'rerun-benchmark' }) },
       { type: 'separator' },
       {
         label: 'Modo seguro (sin aceleración por hardware, reinicia la app)',
         type: 'checkbox',
-        checked: settings.safeRender === true,
-        click: toggleSafeRender,
+        checked: settings.safeRender,
+        click: () => patchSettings({ safeRender: !settings.safeRender }),
       },
       { type: 'separator' },
       { label: 'Salir de Hologram', click: () => app.quit() },
@@ -225,19 +335,9 @@ function createTray(): void {
   const size = 32;
   const icon = nativeImage.createFromBitmap(trayIconPixels(size), { width: size, height: size });
   tray = new Tray(icon);
-  tray.setToolTip('Hologram');
-  tray.on('click', toggleOverlay);
+  tray.setToolTip(`Hologram v${app.getVersion()}`);
+  tray.on('click', openSettings);
   refreshTray();
-}
-
-function cycleCamera(): void {
-  if (cameras.length < 2) return;
-  const i = cameras.findIndex((c) => c.deviceId === settings.deviceId);
-  const next = cameras[(i + 1) % cameras.length];
-  if (!next) return;
-  settings = { ...settings, deviceId: next.deviceId };
-  saveSettings(settings);
-  broadcast({ type: 'set-camera', deviceId: next.deviceId });
 }
 
 function registerShortcuts(): void {
@@ -245,28 +345,46 @@ function registerShortcuts(): void {
     if (!globalShortcut.register(accelerator, fn)) console.warn(`shortcut ${accelerator} could not be registered`);
   };
   bind('CommandOrControl+Alt+O', toggleOverlay);
-  bind('CommandOrControl+Alt+H', () => broadcast({ type: 'toggle-hud' }));
+  bind('CommandOrControl+Alt+H', () => patchSettings({ hud: !settings.hud }));
   bind('CommandOrControl+Alt+C', cycleCamera);
   bind('CommandOrControl+Alt+B', () => broadcast({ type: 'rerun-benchmark' }));
+  bind('CommandOrControl+Alt+S', openSettings);
   bind('CommandOrControl+Alt+Q', () => app.quit());
 }
 
-/** Dev aid: HOLOGRAM_SHOT=<file.png> saves the overlay after HOLOGRAM_SHOT_DELAY ms (default 25 s) and quits. */
-function scheduleDebugScreenshot(): void {
-  const target = process.env['HOLOGRAM_SHOT'];
-  if (!target) return;
+/** Dev aid: HOLOGRAM_SHOT=<file.png> saves the overlay (HOLOGRAM_SHOT_SETTINGS=<file.png> the settings window). */
+function scheduleDebugScreenshots(): void {
+  const overlayTarget = process.env['HOLOGRAM_SHOT'];
+  const settingsTarget = process.env['HOLOGRAM_SHOT_SETTINGS'];
+  if (!overlayTarget && !settingsTarget) return;
+  const delay = Number(process.env['HOLOGRAM_SHOT_DELAY'] ?? 25000);
+  // Dev only: switch the camera-image preview on a few seconds before the capture.
+  if (settingsTarget) {
+    setTimeout(() => {
+      void settingsWin?.webContents.executeJavaScript("document.getElementById('previewOn').click()");
+    }, Math.max(0, delay - 6000));
+  }
   setTimeout(() => {
-    void overlay?.webContents.capturePage().then((image) => {
-      fs.writeFileSync(target, image.toPNG());
+    void (async () => {
+      if (overlayTarget && overlay) fs.writeFileSync(overlayTarget, (await overlay.webContents.capturePage()).toPNG());
+      if (settingsTarget && settingsWin) {
+        const full = Number(await settingsWin.webContents.executeJavaScript('document.documentElement.scrollHeight'));
+        settingsWin.setContentSize(1000, Math.min(full, 3000));
+        await new Promise((r) => setTimeout(r, 800));
+        fs.writeFileSync(settingsTarget, (await settingsWin.webContents.capturePage()).toPNG());
+      }
       app.quit();
-    });
-  }, Number(process.env['HOLOGRAM_SHOT_DELAY'] ?? 25000));
+    })();
+  }, delay);
 }
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Launching the exe again just brings the settings window up.
+  app.on('second-instance', openSettings);
   void app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
     registerProtocol();
     registerIpc();
     createTracker();
@@ -274,10 +392,14 @@ if (!app.requestSingleInstanceLock()) {
     createOverlay();
     registerShortcuts();
     createTray();
-    updater = new UpdateController(refreshTray, path.join(app.getPath('userData'), 'update.log'));
+    updater = new UpdateController(() => {
+      refreshTray();
+      send(settingsWin, CH.update, updater?.snapshot());
+    }, path.join(app.getPath('userData'), 'update.log'));
     updater.start();
     refreshTray();
-    scheduleDebugScreenshot();
+    openSettings();
+    scheduleDebugScreenshots();
   });
   app.on('window-all-closed', () => app.quit());
   app.on('will-quit', () => {

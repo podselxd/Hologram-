@@ -51,6 +51,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" release/Hologram.exe release/Hologram.exe.sha256 \
-            --title "Hologram ${GITHUB_REF_NAME}" \
-            --notes "Unsigned portable build. Windows SmartScreen will warn: More info -> Run anyway. Installed copies offer this update from the tray icon."
+          # The release may already exist (created from the web UI when the tag was made): then just attach the files.
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release/Hologram.exe release/Hologram.exe.sha256 --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release/Hologram.exe release/Hologram.exe.sha256 \
+              --title "Hologram ${GITHUB_REF_NAME}" \
+              --notes "Unsigned portable build. Windows SmartScreen will warn: More info -> Run anyway. Installed copies offer this update from the tray icon."
+          fi

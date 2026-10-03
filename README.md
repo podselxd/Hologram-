@@ -14,8 +14,8 @@ No necesitas Node ni `npm`. El `.exe` se construye en un runner de Windows con G
 1. En GitHub: pestaña **Actions** → workflow **build-windows** → la última ejecución en verde.
 2. En **Artifacts** descarga `Hologram-windows` (un zip).
 3. Dentro hay dos archivos:
-   - `Hologram-<versión>-x64.exe` con el instalador (NSIS, por usuario, sin permisos de administrador).
-   - `Hologram-<versión>-x64.exe` portable: ejecutable único que no instala nada. Arranca más lento porque se
+   - `Hologram-Setup-<versión>.exe`: instalador (NSIS, por usuario, sin permisos de administrador).
+   - `Hologram-Portable-<versión>.exe`: ejecutable único que no instala nada. Arranca más lento porque se
      extrae en una carpeta temporal cada vez.
 
 El `.exe` **no está firmado**: Windows SmartScreen mostrará "Windows protegió su PC". Pulsa **Más información →

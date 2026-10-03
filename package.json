@@ -58,13 +58,16 @@
           ]
         }
       ],
-      "artifactName": "Hologram-${version}-${arch}.${ext}",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Hologram-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Hologram-Portable-${version}.exe"
     }
   }
 }

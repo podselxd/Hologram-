@@ -1,4 +1,5 @@
 import { paletteFor, type Palette } from '../../shared/appearance';
+import { zoneFrom, zoneMap } from '../../shared/gestures';
 import { FrameStats } from '../../shared/frameStats';
 import { FINGERTIPS, HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { HandPredictor } from '../../shared/predictor';
@@ -76,7 +77,11 @@ api.onFrame((frame: HandFrame) => {
     for (let i = 0; i < LANDMARK_COUNT; i++) {
       const lm = hand.landmarks[i];
       if (!lm) continue;
-      const [x, y] = toScreen(lm.x, lm.y, width, height, settings.mirror);
+      // With hand control on, draw with the cursor's mapping: the mouse is exactly between thumb and index.
+      const [x, y] =
+        settings.control !== 'off'
+          ? ((p) => [p.x * width, p.y * height])(zoneMap(lm, zoneFrom(settings.zoneSize, settings.zoneOffsetY), settings.mirror, false))
+          : toScreen(lm.x, lm.y, width, height, settings.mirror);
       incoming[i * 2] = x;
       incoming[i * 2 + 1] = y;
     }

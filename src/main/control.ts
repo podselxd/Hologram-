@@ -86,7 +86,7 @@ export class HandControl {
   onFrame(frame: HandFrame): void {
     if (this.settings.control === 'off') return;
     const hand = this.pickHand(frame.hands);
-    if (hand) this.engine.onHand(hand.landmarks, Date.now());
+    if (hand) this.engine.onHand(hand.landmarks, Date.now(), hand.raw);
   }
 
   private get live(): boolean {

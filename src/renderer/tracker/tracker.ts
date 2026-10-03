@@ -389,6 +389,7 @@ function toSamples(result: HandLandmarkerResult, t: number): HandSample[] {
       slot,
       handedness: handedness?.categoryName === 'Left' ? ('Left' as const) : ('Right' as const),
       score: handedness?.score ?? 0,
+      raw: lms.map((p) => ({ x: p.x, y: p.y, z: p.z })),
       landmarks: lms.map((p, i) => ({
         x: (f[i * 3] as OneEuroFilter).filter(p.x, t),
         y: (f[i * 3 + 1] as OneEuroFilter).filter(p.y, t),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyse, GestureEngine, pinchThresholds, zoneFrom, type GestureConfig } from '../src/shared/gestures';
+import { analyse, GestureEngine, pinchThresholds, zoneFrom, zoneMap, type GestureConfig } from '../src/shared/gestures';
 import type { Landmark } from '../src/shared/types';
 
 /**
@@ -224,5 +224,32 @@ describe('GestureEngine', () => {
     for (let t = 0; t <= 1500; t += 50) g.onHand(hand(), t);
     expect(g.isArmed).toBe(false);
     expect(g.state().armProgress).toBe(0);
+  });
+
+  it('detects the pinch on raw landmarks even when the smoothed ones lag behind', () => {
+    const g = new GestureEngine(config());
+    g.setArmed(true);
+    g.takeEvents();
+    g.onHand(pointing(), 0, pointing({ pinch: 0.02 })); // smoothed still open, raw already pinched
+    expect(g.takeEvents()).toEqual([{ type: 'down' }]);
+  });
+
+  it('the cursor is exactly the drawn point between thumb and index (same mapping)', () => {
+    const cfg = config();
+    const g = new GestureEngine(cfg);
+    const lm = pointing({ cx: 0.45, cy: 0.65 });
+    g.onHand(lm, 0);
+    const mid = { x: (lm[4]!.x + lm[8]!.x) / 2, y: (lm[4]!.y + lm[8]!.y) / 2 };
+    expect(g.state().cursor).toEqual(zoneMap(mid, cfg.zone, cfg.mirror));
+  });
+
+  it('reaches the screen corners before the zone border', () => {
+    const z = zoneFrom(0.6, 0);
+    const inset = 0.06; // 6 % of the image inside the zone border
+    expect(zoneMap({ x: z.x1 - inset, y: z.y0 + inset }, z, true)).toEqual({ x: 0, y: 0 });
+    expect(zoneMap({ x: z.x0 + inset, y: z.y1 - inset }, z, true)).toEqual({ x: 1, y: 1 });
+    const c = zoneMap({ x: 0.5, y: z.y0 + (z.y1 - z.y0) / 2 }, z, true); // centred
+    expect(c.x).toBeCloseTo(0.5);
+    expect(c.y).toBeCloseTo(0.5);
   });
 });

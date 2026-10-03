@@ -16,8 +16,10 @@ export interface HandSample {
   slot: number;
   handedness: Handedness;
   score: number;
-  /** 21 MediaPipe landmarks, normalised to the camera image (0..1). */
+  /** 21 MediaPipe landmarks, normalised to the camera image (0..1), smoothed. */
   landmarks: Landmark[];
+  /** Same landmarks without smoothing: used for gestures, which must react immediately. */
+  raw?: Landmark[];
 }
 
 export interface HandFrame {

@@ -1,5 +1,5 @@
 import { paletteFor, type Palette } from '../../shared/appearance';
-import { zoneFrom } from '../../shared/gestures';
+import { EDGE_OVERSHOOT, zoneFrom } from '../../shared/gestures';
 import { HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { COLORS, DEFAULT_SETTINGS, type ColorPreset, type Settings } from '../../shared/settings';
 import type {
@@ -220,7 +220,13 @@ function drawView(now: number): void {
   }
 
   if (settings.control !== 'off') {
-    const z = zoneFrom(settings.zoneSize, settings.zoneOffsetY);
+    // The area whose edges reach the screen edges (zone shrunk by the edge gain).
+    const zz = zoneFrom(settings.zoneSize, settings.zoneOffsetY);
+    const cx = (zz.x0 + zz.x1) / 2;
+    const cy = (zz.y0 + zz.y1) / 2;
+    const hw = (zz.x1 - zz.x0) / 2 / EDGE_OVERSHOOT;
+    const hh = (zz.y1 - zz.y0) / 2 / EDGE_OVERSHOOT;
+    const z = { x0: cx - hw, x1: cx + hw, y0: cy - hh, y1: cy + hh };
     const x0 = (settings.mirror ? 1 - z.x1 : z.x0) * W;
     g.save();
     g.setLineDash([6, 6]);

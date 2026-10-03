@@ -44,6 +44,26 @@ export interface GestureState {
   dwellProgress: number;
 }
 
+/**
+ * Extra gain at the edges: the screen border is reached a little before the zone border, so corners do not need
+ * the hand at the very edge of the camera image (where tracking gets lost).
+ */
+export const EDGE_OVERSHOOT = 1.3;
+
+/**
+ * The single mapping from camera coordinates to screen (0..1) used by the cursor AND by the drawn hand, so the
+ * mouse sits exactly between the drawn thumb and index. `clamp` keeps the cursor on screen.
+ */
+export function zoneMap(p: { x: number; y: number }, zone: Zone, mirror: boolean, clamp = true): { x: number; y: number } {
+  let u = (p.x - zone.x0) / (zone.x1 - zone.x0);
+  let v = (p.y - zone.y0) / (zone.y1 - zone.y0);
+  if (mirror) u = 1 - u;
+  u = (u - 0.5) * EDGE_OVERSHOOT + 0.5;
+  v = (v - 0.5) * EDGE_OVERSHOOT + 0.5;
+  if (!clamp) return { x: u, y: v };
+  return { x: Math.min(1, Math.max(0, u)), y: Math.min(1, Math.max(0, v)) };
+}
+
 export function zoneFrom(size: number, offsetY: number): Zone {
   const s = Math.min(1, Math.max(0.3, size));
   const cy = Math.min(1 - s / 2, Math.max(s / 2, 0.5 + offsetY));
@@ -173,15 +193,15 @@ export class GestureEngine {
   }
 
   private mapCursor(p: { x: number; y: number }): { x: number; y: number } {
-    const { zone, mirror } = this.config;
-    let u = (p.x - zone.x0) / (zone.x1 - zone.x0);
-    const v = (p.y - zone.y0) / (zone.y1 - zone.y0);
-    if (mirror) u = 1 - u;
-    return { x: Math.min(1, Math.max(0, u)), y: Math.min(1, Math.max(0, v)) };
+    return zoneMap(p, this.config.zone, this.config.mirror);
   }
 
-  onHand(lm: Landmark[], t: number): void {
-    const pose = analyse(lm);
+  /**
+   * `lm` = smoothed landmarks (cursor position); `raw` = unsmoothed ones (gestures), so a pinch is detected the
+   * moment it happens instead of after the smoothing catches up.
+   */
+  onHand(lm: Landmark[], t: number, rawLm?: Landmark[]): void {
+    const pose = analyse(rawLm ?? lm);
     if (!pose) return;
     this.lastHandAt = t;
     const { pinchDown, pinchUp } = this.config;

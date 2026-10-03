@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [claude/graphify-uqxds4, main]
+    tags: ['v*']
 permissions:
   contents: write
 jobs:
@@ -15,17 +16,41 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Tag must match package.json version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${pkg}"; exit 1
+          fi
       - run: npm run check
       - run: npm run dist:win
-      - name: Publish Hologram.exe to the "hologram-latest" release
+      - name: Checksum
+        shell: bash
+        run: |
+          cd release
+          sha256sum Hologram.exe > Hologram.exe.sha256
+          cat Hologram.exe.sha256
+          ls -la Hologram.exe
+      - name: Publish development build (hologram-latest, prerelease)
+        if: github.ref_type == 'branch'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls -la release/Hologram.exe
           gh release delete hologram-latest --cleanup-tag --yes || true
-          gh release create hologram-latest release/Hologram.exe \
+          gh release create hologram-latest release/Hologram.exe release/Hologram.exe.sha256 \
             --prerelease \
             --title "Hologram (latest build)" \
-            --notes "Unsigned portable build of commit ${GITHUB_SHA}. Windows SmartScreen will warn: More info -> Run anyway." \
+            --notes "Unsigned development build of commit ${GITHUB_SHA}. Not used by the auto-updater. Windows SmartScreen will warn: More info -> Run anyway." \
             --target "${GITHUB_SHA}"
+      - name: Publish versioned release (used by the auto-updater)
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/Hologram.exe release/Hologram.exe.sha256 \
+            --title "Hologram ${GITHUB_REF_NAME}" \
+            --notes "Unsigned portable build. Windows SmartScreen will warn: More info -> Run anyway. Installed copies offer this update from the tray icon."

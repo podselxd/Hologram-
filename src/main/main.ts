@@ -27,6 +27,7 @@ import type {
 } from '../shared/types';
 import { parseCli } from './cli';
 import { trayIconPixels } from './iconPixels';
+import { UpdateController } from './updateController';
 import { loadSettings, saveSettings, writeReport } from './settings';
 
 const SCHEME = 'app';
@@ -42,6 +43,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let tray: Tray | null = null;
+let updater: UpdateController | null = null;
 let overlay: BrowserWindow | null = null;
 let tracker: BrowserWindow | null = null;
 let settings = loadSettings();
@@ -201,6 +203,7 @@ function refreshTray(): void {
   const visible = overlay?.isVisible() ?? false;
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      ...(updater ? [...updater.menuItems(), { type: 'separator' as const }] : []),
       { label: visible ? 'Ocultar overlay (apaga la cámara)' : 'Mostrar overlay', click: toggleOverlay },
       { label: 'Mostrar / ocultar HUD', click: () => broadcast({ type: 'toggle-hud' }) },
       { label: 'Cambiar de cámara', click: cycleCamera },
@@ -271,6 +274,9 @@ if (!app.requestSingleInstanceLock()) {
     createOverlay();
     registerShortcuts();
     createTray();
+    updater = new UpdateController(refreshTray, path.join(app.getPath('userData'), 'update.log'));
+    updater.start();
+    refreshTray();
     scheduleDebugScreenshot();
   });
   app.on('window-all-closed', () => app.quit());

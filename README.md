@@ -21,6 +21,24 @@ El `.exe` **no está firmado**: Windows SmartScreen mostrará "Windows protegió
 Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de código). Para construirlo tú mismo:
 `npm run dist:win` en Windows (genera `release/Hologram.exe`).
 
+## Actualizaciones automáticas
+
+El `.exe` portable busca actualizaciones al abrir y cada 6 horas. **Nunca instala solo**: si hay una versión
+nueva, aparece en el menú del icono de la bandeja *"Descargar actualización vX"*, y después *"Reiniciar para
+actualizar"*. También hay *"Buscar actualizaciones"* y *"Volver a la versión anterior"* (el `.exe` previo se
+guarda como `Hologram.old.exe`, junto al actual).
+
+- Solo mira los **releases con versión** (`v0.3.0`…), no el build de desarrollo `hologram-latest`.
+- Para publicar una versión: sube el número en `package.json` y crea un tag igual (`git tag v0.3.0 && git push
+  origin v0.3.0`). El CI construye en Windows y publica `Hologram.exe` y `Hologram.exe.sha256`.
+- La descarga se verifica con SHA-256 y tamaño. Eso detecta archivos corruptos, **no prueba autenticidad**: el
+  `.exe` no está firmado, así que la seguridad de las actualizaciones depende de tu cuenta de GitHub.
+- Solo funciona ejecutando el portable (necesita saber su ruta original). Desde el código fuente está desactivado.
+- Los fallos quedan en `update.log` dentro de la carpeta de datos y la app sigue con la versión actual.
+- Verificado: la lógica (versiones, descarga, checksum, rechazo de archivos corruptos o de otro repo) con pruebas
+  unitarias, y el script de reemplazo con archivos falsos en un runner de Windows. **No verificado:** una
+  actualización real de extremo a extremo (el portable de electron-builder y los antivirus pueden dar sorpresas).
+
 ## Uso desde el código fuente
 
 Requisitos: Windows 10/11 (objetivo principal), Node 22+, webcam.

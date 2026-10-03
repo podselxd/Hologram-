@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: [claude/graphify-uqxds4, main]
+permissions:
+  contents: write
 jobs:
   exe:
     runs-on: windows-latest
@@ -15,13 +17,15 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run dist:win
-      - name: List artifacts
-        run: Get-ChildItem release -Filter *.exe | Select-Object Name, Length
-        shell: pwsh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Hologram-windows
-          path: |
-            release/Hologram-*.exe
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish Hologram.exe to the "hologram-latest" release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la release/Hologram.exe
+          gh release delete hologram-latest --cleanup-tag --yes || true
+          gh release create hologram-latest release/Hologram.exe \
+            --prerelease \
+            --title "Hologram (latest build)" \
+            --notes "Unsigned portable build of commit ${GITHUB_SHA}. Windows SmartScreen will warn: More info -> Run anyway." \
+            --target "${GITHUB_SHA}"

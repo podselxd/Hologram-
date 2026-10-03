@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "dist:win": "npm run fetch-model && npm run build && electron-builder --win --publish never",
+    "dist:win": "npm run fetch-model && npm run build && electron-builder --win portable --publish never",
     "pack:win": "npm run fetch-model && npm run build && electron-builder --win dir --publish never"
   },
   "devDependencies": {
@@ -50,24 +50,12 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "signAndEditExecutable": false
     },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "deleteAppDataOnUninstall": false,
-      "artifactName": "Hologram-Setup-${version}.exe"
-    },
     "portable": {
-      "artifactName": "Hologram-Portable-${version}.exe"
+      "artifactName": "Hologram.exe"
     }
   }
 }

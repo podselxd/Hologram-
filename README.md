@@ -9,18 +9,17 @@ escritorio. La ventana es transparente, siempre visible y **deja pasar los clics
 
 ## Descargar el .exe (Windows)
 
-No necesitas Node ni `npm`. El `.exe` se construye en un runner de Windows con GitHub Actions:
+No necesitas Node ni `npm`. Un solo archivo, `Hologram.exe` (portable: no instala nada).
 
-1. En GitHub: pestaña **Actions** → workflow **build-windows** → la última ejecución en verde.
-2. En **Artifacts** descarga `Hologram-windows` (un zip).
-3. Dentro hay dos archivos:
-   - `Hologram-Setup-<versión>.exe`: instalador (NSIS, por usuario, sin permisos de administrador).
-   - `Hologram-Portable-<versión>.exe`: ejecutable único que no instala nada. Arranca más lento porque se
-     extrae en una carpeta temporal cada vez.
+1. En GitHub, abre la sección **Releases** del repo y entra a **Hologram (latest build)**.
+2. Descarga **`Hologram.exe`** y ábrelo con doble clic.
+
+Se reconstruye solo en un servidor de Windows (GitHub Actions) en cada cambio de la rama. Arranca más
+lento que una app instalada porque se extrae a una carpeta temporal cada vez.
 
 El `.exe` **no está firmado**: Windows SmartScreen mostrará "Windows protegió su PC". Pulsa **Más información →
-Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de código). Para ejecutarlo o
-construirlo tú mismo: `npm run dist:win` en Windows (genera la carpeta `release/`).
+Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de código). Para construirlo tú mismo:
+`npm run dist:win` en Windows (genera `release/Hologram.exe`).
 
 ## Uso desde el código fuente
 

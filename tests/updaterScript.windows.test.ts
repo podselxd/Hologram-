@@ -32,9 +32,17 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     const started = Date.now();
 
     const script = path.join(dir, 'swap.ps1');
-    fs.writeFileSync(script, buildSwapScript({ target, source, backup, pids: [waiterPid], relaunch: false }));
+    const logPath = path.join(dir, 'update-swap.log');
+    const lockPath = path.join(dir, 'update-in-progress');
+    fs.writeFileSync(lockPath, 'x');
+    fs.writeFileSync(script, buildSwapScript({ target, source, backup, pids: [waiterPid], relaunch: false, logPath, lockPath }));
     const code = await run(script);
     const elapsed = Date.now() - started;
+    expect(fs.existsSync(lockPath)).toBe(false); // "update in progress" cleared
+    const log = fs.readFileSync(logPath, 'utf8');
+    expect(log).toContain('app closed');
+    expect(log).toContain('new exe in place');
+    expect(log).toContain('finished (0)');
 
     expect(code).toBe(0);
     expect(elapsed).toBeGreaterThan(1500); // it really waited for the process
@@ -58,11 +66,16 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
         backup: path.join(dir, 'Hologram.old.exe'),
         pids: [999999],
         relaunch: false,
+        notePath: path.join(dir, 'update-note.txt'),
+        lockPath: path.join(dir, 'update-in-progress'),
       }),
     );
+    fs.writeFileSync(path.join(dir, 'update-in-progress'), 'x');
     const code = await run(script);
     expect(code).not.toBe(0);
     expect(fs.readFileSync(target, 'utf8')).toBe('OLD');
+    expect(fs.readFileSync(path.join(dir, 'update-note.txt'), 'utf8')).toContain('swap-failed');
+    expect(fs.existsSync(path.join(dir, 'update-in-progress'))).toBe(false);
     fs.rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 

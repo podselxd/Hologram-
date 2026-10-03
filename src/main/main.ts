@@ -419,8 +419,12 @@ if (!app.requestSingleInstanceLock()) {
       path.join(app.getPath('userData'), 'update.log'),
       () => settings.autoUpdate,
     );
-    // A verified update that was waiting for the next start: install it before showing anything.
-    if (await updater.applyPendingOnStart()) return;
+    // An update is being installed by a previous run: do not start a second copy that would lock the exe.
+    if (updater.swapInProgress()) {
+      new Notification({ title: 'Hologram', body: 'Hologram se está actualizando. Espera unos segundos y se abrirá sola.' }).show();
+      setTimeout(() => app.quit(), 2500);
+      return;
+    }
 
     registerProtocol();
     registerIpc();
@@ -445,6 +449,10 @@ if (!app.requestSingleInstanceLock()) {
     scheduleDebugScreenshots();
   });
   app.on('window-all-closed', () => app.quit());
+  // Install a ready update while quitting (auto mode), so the next start is the new version.
+  app.on('before-quit', () => {
+    updater?.installOnQuit();
+  });
   app.on('will-quit', () => {
     control?.stop();
     globalShortcut.unregisterAll();

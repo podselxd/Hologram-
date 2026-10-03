@@ -149,6 +149,12 @@ export interface SwapParams {
   relaunch: boolean;
   /** Health check with automatic rollback. Omit for a plain swap (manual rollback). */
   verify?: SwapVerify;
+  /** Step-by-step log, so a failed update can be explained. */
+  logPath?: string;
+  /** "Update in progress" marker: created by the app, removed by the script when it finishes either way. */
+  lockPath?: string;
+  /** Where to write "swap-failed <reason>" for the app to report (default: %TEMP%). */
+  notePath?: string;
 }
 
 /** PowerShell single-quoted literal: only the quote itself needs escaping. */
@@ -176,15 +182,21 @@ export function buildSwapScript(p: SwapParams): string {
       throw new Error('invalid verify timeout');
     }
   }
-  const relaunch = p.relaunch ? ['Start-Process -FilePath $target'] : [];
+  const relaunch = p.relaunch ? ["Log 'relaunching'", 'Start-Process -FilePath $target'] : [];
   const lines = [
     "$ErrorActionPreference = 'SilentlyContinue'",
     `$target = ${psQuote(p.target)}`,
     `$source = ${psQuote(p.source)}`,
     `$backup = ${psQuote(p.backup)}`,
-    `$failNote = Join-Path $env:TEMP 'hologram-update-failed.txt'`,
+    `$failNote = ${p.notePath ? psQuote(p.notePath) : "Join-Path $env:TEMP 'hologram-update-failed.txt'"}`,
+    `$log = ${p.logPath ? psQuote(p.logPath) : '$null'}`,
+    `$lock = ${p.lockPath ? psQuote(p.lockPath) : '$null'}`,
     ...(v ? [`$marker = ${psQuote(v.markerPath)}`, `$note = ${psQuote(v.failureNotePath)}`] : []),
     `$waitFor = @(${pids.join(', ')})`,
+    'function Log($m) { if ($log) { Add-Content -LiteralPath $log -Value ("{0} {1}" -f (Get-Date -Format s), $m) } }',
+    'function Finish($code) { if ($lock) { Remove-Item -LiteralPath $lock -Force }; Log "finished ($code)"; exit $code }',
+    'function Fail($why) { Set-Content -LiteralPath $failNote -Value "swap-failed $why"; Log "FAILED: $why"; Finish 1 }',
+    "Log 'swap script started'",
     '# 1. wait for the app to exit (max 90 s)',
     '$alive = $true',
     'for ($i = 0; $i -lt 90; $i++) {',
@@ -193,20 +205,22 @@ export function buildSwapScript(p: SwapParams): string {
     '  if (-not $alive) { break }',
     '  Start-Sleep -Seconds 1',
     '}',
-    "if ($alive) { Set-Content -LiteralPath $failNote -Value 'swap failed: app still running'; exit 1 }",
-    '# 2. keep the current exe as backup (retry: the portable launcher may hold it a moment longer)',
+    "if ($alive) { Fail 'Hologram did not close' }",
+    "Log 'app closed'",
+    '# 2. keep the current exe as backup (retry: the portable launcher, or a copy opened meanwhile, may hold it)',
     '$moved = $false',
-    'for ($i = 0; $i -lt 30; $i++) {',
+    'for ($i = 0; $i -lt 60; $i++) {',
     '  if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }',
     '  try { Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop; $moved = $true; break } catch { Start-Sleep -Seconds 1 }',
     '}',
-    "if (-not $moved) { Set-Content -LiteralPath $failNote -Value 'swap failed: exe locked'; exit 1 }",
+    "if (-not $moved) { Fail 'the exe stayed locked (is another Hologram open?)' }",
+    "Log 'backup made'",
     '# 3. put the new exe in place, or restore the old one',
     'try { Move-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop } catch {',
     '  Move-Item -LiteralPath $backup -Destination $target -Force',
-    "  Set-Content -LiteralPath $failNote -Value 'swap failed: new exe missing'",
-    '  exit 1',
+    "  Fail 'the downloaded exe was missing'",
     '}',
+    "Log 'new exe in place'",
     ...(v ? ['Remove-Item -LiteralPath $marker -Force'] : []),
     ...relaunch,
     ...(v
@@ -218,6 +232,7 @@ export function buildSwapScript(p: SwapParams): string {
           '  Start-Sleep -Seconds 1',
           '}',
           'if (-not $ok) {',
+          "  Log 'new version did not start in time: rolling back'",
           `  Stop-Process -Name ${psQuote(v.killImage.replace(/\.exe$/, ''))} -Force`,
           '  Start-Sleep -Seconds 2',
           '  for ($i = 0; $i -lt 15; $i++) {',
@@ -225,16 +240,17 @@ export function buildSwapScript(p: SwapParams): string {
           '    if (-not (Test-Path -LiteralPath $target)) { break }',
           '    Start-Sleep -Seconds 1',
           '  }',
-          `  if (Test-Path -LiteralPath $target) { Set-Content -LiteralPath $note -Value 'rollback-failed ${v.label}'; exit 2 }`,
+          `  if (Test-Path -LiteralPath $target) { Set-Content -LiteralPath $note -Value 'rollback-failed ${v.label}'; Finish 2 }`,
           '  Move-Item -LiteralPath $backup -Destination $target -Force',
           `  Set-Content -LiteralPath $note -Value 'rolled-back ${v.label}'`,
           ...relaunch.map((l) => `  ${l}`),
-          '  exit 1',
+          '  Finish 1',
           '}',
+          "Log 'new version confirmed it started'",
         ]
       : []),
     'Remove-Item -LiteralPath $PSCommandPath -Force',
-    'exit 0',
+    'Finish 0',
   ];
   return lines.join('\r\n') + '\r\n';
 }

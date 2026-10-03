@@ -26,8 +26,10 @@ Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de cód
 El `.exe` portable busca versiones nuevas al abrir y cada 6 horas. Hay dos modos (ventana de ajustes →
 Actualizaciones; por defecto **automático**):
 
-- **Automático:** descarga y verifica la versión nueva en segundo plano y la **instala sola la próxima vez que
-  abras Hologram** (o ya, con *Reiniciar ahora* en la bandeja). Avisa con una notificación al instalar.
+- **Automático:** descarga y verifica la versión nueva en segundo plano y la **instala al salir de Hologram**
+  (bandeja → *Salir de Hologram*; cerrar la ventana no sale), o ya con *Reiniciar ahora* (se cierra y se vuelve a
+  abrir sola en ~30 s). Avisa con notificaciones en cada paso; si abres otra copia mientras instala, esa copia espera
+  en vez de bloquear el archivo. Cada paso queda en `update-swap.log` y, si falla, la app te dice por qué.
 - **Preguntar:** no hace nada sin tu clic (*Descargar actualización*, luego *Reiniciar para actualizar*).
 
 Protecciones:

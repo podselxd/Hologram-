@@ -360,7 +360,7 @@ function renderUpdate(u: UpdateSnapshot): void {
       break;
     case 'ready':
       text.textContent = u.auto
-        ? `v${u.latest ?? '?'} descargada y verificada. Se instalará sola la próxima vez que abras Hologram.`
+        ? `v${u.latest ?? '?'} descargada y verificada. Se instala al salir de Hologram (bandeja → Salir de Hologram), o ahora con «Reiniciar ahora» (se cierra y se abre sola en ~30 s).`
         : `v${u.latest ?? '?'} descargada y verificada. Se reemplazará el .exe al reiniciar.`;
       text.className = 'msg ok';
       btn.textContent = u.auto ? 'Reiniciar ahora' : 'Reiniciar para actualizar';

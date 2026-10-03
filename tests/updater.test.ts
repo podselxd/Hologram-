@@ -245,3 +245,22 @@ describe('legacyCleanupScript', () => {
     expect(s).not.toMatch(/tasklist|taskkill|ping |cmd \/c/i);
   });
 });
+
+describe('buildSwapScript logging and lock', () => {
+  it('logs steps, explains failures and always clears the lock', () => {
+    const s = buildSwapScript({
+      target: 'C:\\a\\Hologram.exe',
+      source: 'C:\\a\\Hologram.update.exe',
+      backup: 'C:\\a\\Hologram.old.exe',
+      pids: [1],
+      relaunch: true,
+      logPath: 'C:\\d\\update-swap.log',
+      lockPath: 'C:\\d\\update-in-progress',
+      notePath: 'C:\\d\\update-note.txt',
+    });
+    expect(s).toContain("$lock = 'C:\\d\\update-in-progress'");
+    expect(s).toContain('function Finish($code) { if ($lock) { Remove-Item -LiteralPath $lock -Force }');
+    expect(s).toContain('swap-failed $why');
+    expect(s).not.toMatch(/^\s*exit \d/m); // every exit goes through Finish (clears the lock)
+  });
+});

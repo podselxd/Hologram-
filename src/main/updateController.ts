@@ -41,6 +41,7 @@ const MAX_APPLY_ATTEMPTS = 2;
  */
 export class UpdateController {
   private state: State = { kind: 'idle' };
+  private swapping = false;
   private readonly target = process.env['PORTABLE_EXECUTABLE_FILE'];
   private readonly userData = app.getPath('userData');
 
@@ -72,6 +73,12 @@ export class UpdateController {
   private get notePath(): string {
     return path.join(this.userData, 'update-note.txt');
   }
+  private get swapLogPath(): string {
+    return path.join(this.userData, 'update-swap.log');
+  }
+  private get lockPath(): string {
+    return path.join(this.userData, 'update-in-progress');
+  }
   private get lastVersionPath(): string {
     return path.join(this.userData, 'last-version.txt');
   }
@@ -91,6 +98,7 @@ export class UpdateController {
 
   start(): void {
     this.cleanupLegacy();
+    void this.restorePending();
     // Tell a future update that this version starts fine (every run, harmless).
     setTimeout(() => {
       try {
@@ -133,9 +141,11 @@ export class UpdateController {
         this.log(`update note: ${note}`);
         const version = /(\d+\.\d+\.\d+)/.exec(note)?.[1] ?? '?';
         this.notify(
-          note.startsWith('rollback-failed')
-            ? `La actualización a v${version} falló y no pude restaurar la versión anterior. Descarga Hologram de nuevo desde GitHub.`
-            : `La actualización a v${version} no arrancó bien; se restauró la versión anterior (v${app.getVersion()}).`,
+          note.startsWith('swap-failed')
+            ? `No se pudo instalar la actualización: ${note.slice('swap-failed '.length)}. Sigues en v${app.getVersion()}; se reintentará al salir.`
+            : note.startsWith('rollback-failed')
+              ? `La actualización a v${version} falló y no pude restaurar la versión anterior. Descarga Hologram de nuevo desde GitHub.`
+              : `La actualización a v${version} no arrancó bien; se restauró la versión anterior (v${app.getVersion()}).`,
         );
         return;
       }
@@ -171,44 +181,65 @@ export class UpdateController {
     if (removeFile) fs.rmSync(this.updatePath, { force: true });
   }
 
-  /**
-   * Called first thing at startup. If a verified update is waiting (auto mode, same major, not tried too many
-   * times, file intact) it starts the swap and returns true: the caller must stop starting up.
-   */
-  async applyPendingOnStart(): Promise<boolean> {
-    if (!this.enabled) return false;
+  /** True while a swap script from a previous run is still working (a second copy must not start). */
+  swapInProgress(): boolean {
+    try {
+      const age = Date.now() - fs.statSync(this.lockPath).mtimeMs;
+      if (age < 3 * 60 * 1000) return true;
+      fs.rmSync(this.lockPath, { force: true }); // stale: the script died
+    } catch {
+      // no lock
+    }
+    return false;
+  }
+
+  /** At startup: a verified download from a previous run becomes "ready" again (installed on quit). */
+  private async restorePending(): Promise<void> {
+    if (!this.enabled) return;
     const pending = this.readPending();
     if (!pending) {
       fs.rmSync(this.updatePath, { force: true });
-      return false;
+      return;
     }
     if (!isNewer(pending.version, app.getVersion())) {
       this.dropPending(true); // already installed, or older than what runs now
-      return false;
+      return;
     }
-    if (this.getMode() !== 'auto') return false;
-    if (!isAutoUpdateAllowed(app.getVersion(), pending.version)) return false;
     if (pending.attempts >= MAX_APPLY_ATTEMPTS) {
       this.log(`giving up on ${pending.version} after ${pending.attempts} attempts`);
       this.dropPending(true);
-      this.notify(`No pude instalar la actualización v${pending.version} tras varios intentos. Sigues en v${app.getVersion()}.`);
-      return false;
+      this.notify(`No pude instalar la actualización v${pending.version} tras varios intentos. Sigues en v${app.getVersion()}. Puedes bajarla a mano desde GitHub.`);
+      return;
     }
     try {
       const stat = fs.statSync(pending.path);
       if (stat.size !== pending.size || (await sha256File(pending.path)) !== pending.sha256) {
         this.log('pending update failed the integrity check; discarding');
         this.dropPending(true);
-        return false;
+        return;
       }
     } catch {
       this.dropPending(false);
-      return false;
+      return;
     }
-    this.writePending({ ...pending, attempts: pending.attempts + 1 });
-    this.log(`installing ${pending.version} on start (attempt ${pending.attempts + 1})`);
-    this.swapAndQuit(pending.path, this.backupPath, pending.version, true);
+    this.set({ kind: 'ready', info: { tag: `v${pending.version}`, version: pending.version, exeUrl: '', exeSize: pending.size, shaUrl: '' } });
+  }
+
+  /**
+   * Called when the app is quitting: in auto mode a ready update is installed now (no relaunch), so the next
+   * time the user opens Hologram it is the new version. Returns true if the swap was started.
+   */
+  installOnQuit(): boolean {
+    if (this.swapping || this.state.kind !== 'ready' || this.getMode() !== 'auto') return false;
+    if (!isAutoUpdateAllowed(app.getVersion(), this.state.info.version)) return false;
+    this.bumpAttempts();
+    this.swapAndQuit(this.updatePath, this.backupPath, this.state.info.version, true, false, false);
     return true;
+  }
+
+  private bumpAttempts(): void {
+    const p = this.readPending();
+    if (p) this.writePending({ ...p, attempts: p.attempts + 1 });
   }
 
   // ---- check / download -------------------------------------------------------------------------------------------
@@ -253,7 +284,7 @@ export class UpdateController {
       const auto = this.getMode() === 'auto' && isAutoUpdateAllowed(app.getVersion(), info.version);
       this.notify(
         auto
-          ? `Actualización v${info.version} lista: se instalará la próxima vez que abras Hologram (o reinicia desde la bandeja).`
+          ? `Actualización v${info.version} lista: se instalará al salir de Hologram (icono de la bandeja → Salir), o ahora con "Reiniciar ahora".`
           : `Versión ${info.version} descargada y verificada. Elige "Reiniciar para actualizar".`,
       );
     } catch (err) {
@@ -273,9 +304,12 @@ export class UpdateController {
 
   // ---- swap ------------------------------------------------------------------------------------------------------------
 
-  /** Spawns the swap script and quits so the exe can be replaced. */
-  private swapAndQuit(source: string, backup: string, version: string | null, verify: boolean): void {
+  /** Spawns the swap script; it waits for this process to exit, so the caller must quit (or already be quitting). */
+  private swapAndQuit(source: string, backup: string, version: string | null, verify: boolean, relaunch = true, quit = true): void {
+    this.swapping = true;
     const script = path.join(os.tmpdir(), `hologram-update-${Date.now()}.ps1`);
+    fs.mkdirSync(this.userData, { recursive: true });
+    fs.writeFileSync(this.lockPath, new Date().toISOString());
     fs.writeFileSync(
       script,
       buildSwapScript({
@@ -284,7 +318,10 @@ export class UpdateController {
         backup,
         // Only this process: the portable launcher's lock on the exe is handled by the move retries.
         pids: [process.pid],
-        relaunch: true,
+        relaunch,
+        logPath: this.swapLogPath,
+        lockPath: this.lockPath,
+        notePath: this.notePath,
         ...(verify && version
           ? {
               verify: {
@@ -306,12 +343,18 @@ export class UpdateController {
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
       { detached: true, stdio: 'ignore', windowsHide: true, env },
     ).unref();
-    this.log(`swap script started: ${script}`);
-    app.quit();
+    this.log(`swap script started: ${script} (relaunch=${relaunch})`);
+    this.notify(
+      relaunch
+        ? 'Actualizando Hologram: se cerrará y se volverá a abrir sola en unos 30 segundos. No la abras mientras tanto.'
+        : `Instalando v${version ?? ''} al salir. La próxima vez que abras Hologram será la versión nueva (espera unos segundos).`,
+    );
+    if (quit) app.quit();
   }
 
   applyAndRestart(): void {
-    if (this.state.kind !== 'ready') return;
+    if (this.state.kind !== 'ready' || this.swapping) return;
+    this.bumpAttempts();
     this.swapAndQuit(this.updatePath, this.backupPath, this.state.info.version, true);
   }
 

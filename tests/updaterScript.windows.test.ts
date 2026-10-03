@@ -9,13 +9,16 @@ import { buildSwapScript } from '../src/main/updater';
 describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
   const run = (script: string): Promise<number> =>
     new Promise((resolve, reject) => {
-      const child = spawn('cmd.exe', ['/c', script], { stdio: 'ignore', windowsHide: true });
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
       child.on('error', reject);
       child.on('exit', (code) => resolve(code ?? -1));
     });
 
   it('waits for the pid to exit, keeps a backup and puts the new file in place', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo swap % test '));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "holo swap ' test "));
     const target = path.join(dir, 'Hologram.exe');
     const source = path.join(dir, 'Hologram.update.exe');
     const backup = path.join(dir, 'Hologram.old.exe');
@@ -28,7 +31,7 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     const waiterPid = waiter.pid as number;
     const started = Date.now();
 
-    const script = path.join(dir, 'swap.cmd');
+    const script = path.join(dir, 'swap.ps1');
     fs.writeFileSync(script, buildSwapScript({ target, source, backup, pids: [waiterPid], relaunch: false }));
     const code = await run(script);
     const elapsed = Date.now() - started;
@@ -46,7 +49,7 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo swap fail '));
     const target = path.join(dir, 'Hologram.exe');
     fs.writeFileSync(target, 'OLD');
-    const script = path.join(dir, 'swap.cmd');
+    const script = path.join(dir, 'swap.ps1');
     fs.writeFileSync(
       script,
       buildSwapScript({
@@ -80,7 +83,7 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     fs.writeFileSync(target, 'OLD');
     fs.writeFileSync(source, 'NEW');
     const v = verifyOpts(dir, 40);
-    const script = path.join(dir, 'swap.cmd');
+    const script = path.join(dir, 'swap.ps1');
     fs.writeFileSync(script, buildSwapScript({ target, source, backup, pids: [999999], relaunch: false, verify: v }));
     const done = run(script);
     // Play the part of the new version: write the marker once the swap happened (after the script cleared it).
@@ -103,7 +106,7 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     fs.writeFileSync(target, 'OLD');
     fs.writeFileSync(source, 'NEW');
     const v = verifyOpts(dir, 4);
-    const script = path.join(dir, 'swap.cmd');
+    const script = path.join(dir, 'swap.ps1');
     fs.writeFileSync(script, buildSwapScript({ target, source, backup, pids: [999999], relaunch: false, verify: v }));
     const code = await run(script);
     expect(code).toBe(1);

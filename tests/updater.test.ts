@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildSwapScript,
-  cmdEscape,
+  psQuote,
   downloadAndVerify,
   fetchLatest,
   isAutoUpdateAllowed,
@@ -143,23 +143,22 @@ describe('buildSwapScript', () => {
     pids: [1234, 5678],
     relaunch: true,
   };
-  it('escapes percent signs', () => {
-    expect(cmdEscape('C:\\100%\\x')).toBe('C:\\100%%\\x');
+  it('quotes paths for PowerShell', () => {
+    expect(psQuote("C:\\O'Neil\\x")).toBe("'C:\\O''Neil\\x'");
   });
   it('contains the paths, the pids and the relaunch', () => {
     const s = buildSwapScript(params);
-    expect(s).toContain(`set "TARGET=${params.target}"`);
-    expect(s).toContain('for %%P in (1234 5678) do (');
-    expect(s).toContain('start "" "%TARGET%"');
+    expect(s).toContain(`$target = '${params.target}'`);
+    expect(s).toContain('$waitFor = @(1234, 5678)');
+    expect(s).toContain('Start-Process -FilePath $target');
     expect(s).toContain('\r\n');
   });
   it('can skip the relaunch', () => {
-    expect(buildSwapScript({ ...params, relaunch: false })).not.toContain('start ""');
+    expect(buildSwapScript({ ...params, relaunch: false })).not.toContain('Start-Process');
   });
-  it('never uses a parenthesised block around the retry counter', () => {
-    // %N% inside ( ) would be expanded once and the loop could never time out.
-    const s = buildSwapScript(params);
-    expect(s).not.toMatch(/\(\r\n\s+set \/a N\+=1/);
+  it('never starts external console programs (they flash a window each)', () => {
+    const s = buildSwapScript({ ...params, verify: { markerPath: 'm', timeoutSeconds: 5, killImage: 'Hologram.exe', failureNotePath: 'n', label: '1.0.0' } });
+    expect(s).not.toMatch(/tasklist|find |ping |taskkill|cmd\.exe/i);
   });
   it('requires at least one valid pid', () => {
     expect(() => buildSwapScript({ ...params, pids: [0, -1, NaN] })).toThrow();
@@ -214,20 +213,20 @@ describe('buildSwapScript with verification', () => {
   };
   it('waits for the marker and rolls back when it never appears', () => {
     const s = buildSwapScript(base);
-    expect(s).toContain('if exist "%MARKER%" goto done');
-    expect(s).toContain('if %V% GEQ 90 goto rollback');
-    expect(s).toContain('taskkill /F /IM Hologram.exe');
-    expect(s).toContain('move /Y "%BACKUP%" "%TARGET%"');
+    expect(s).toContain('if (Test-Path -LiteralPath $marker) { $ok = $true; break }');
+    expect(s).toContain('for ($i = 0; $i -lt 90; $i++)');
+    expect(s).toContain("Stop-Process -Name 'Hologram' -Force");
+    expect(s).toContain('Move-Item -LiteralPath $backup -Destination $target -Force');
     expect(s).toContain('rolled-back 0.2.1');
   });
   it('deletes the stale marker before relaunching', () => {
     const s = buildSwapScript(base);
-    expect(s.indexOf('del /F /Q "%MARKER%"')).toBeLessThan(s.indexOf('start "" "%TARGET%"'));
+    expect(s.indexOf('Remove-Item -LiteralPath $marker')).toBeLessThan(s.indexOf('Start-Process -FilePath $target'));
   });
   it('has no verification section without verify', () => {
     const { verify: _verify, ...plain } = base;
     void _verify;
-    expect(buildSwapScript(plain)).not.toContain('MARKER');
+    expect(buildSwapScript(plain)).not.toContain('$marker');
   });
   it('rejects unsafe values that would reach cmd.exe', () => {
     expect(() => buildSwapScript({ ...base, verify: { ...base.verify, killImage: 'a.exe & calc' } })).toThrow();

@@ -151,18 +151,19 @@ export interface SwapParams {
   verify?: SwapVerify;
 }
 
-/** cmd.exe treats % as a variable marker even inside quotes. */
-export function cmdEscape(value: string): string {
-  return value.replace(/%/g, '%%');
+/** PowerShell single-quoted literal: only the quote itself needs escaping. */
+export function psQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 const SAFE_IMAGE = /^[A-Za-z0-9._-]+\.exe$/;
 const SAFE_LABEL = /^[0-9.]{1,32}$/;
 
 /**
- * Batch script run by a detached cmd.exe after the app quits: waits for the app to exit, keeps the old exe as
- * a backup, puts the new one in place and relaunches. With `verify`, waits for the new version to prove it
- * started and otherwise restores the old exe. Restores the old exe too if the swap itself fails.
+ * PowerShell script run detached after the app quits: waits for the app to exit, keeps the old exe as a backup,
+ * puts the new one in place and relaunches. With `verify`, waits for the new version to prove it started and
+ * otherwise restores the old exe. Only built-in cmdlets are used: a detached process has no console, and every
+ * external console program (tasklist, find, ping…) would pop up its own window — that was the flashing window.
  */
 export function buildSwapScript(p: SwapParams): string {
   const pids = p.pids.filter((n) => Number.isInteger(n) && n > 0);
@@ -175,78 +176,65 @@ export function buildSwapScript(p: SwapParams): string {
       throw new Error('invalid verify timeout');
     }
   }
+  const relaunch = p.relaunch ? ['Start-Process -FilePath $target'] : [];
   const lines = [
-    '@echo off',
-    'setlocal EnableExtensions',
-    `set "TARGET=${cmdEscape(p.target)}"`,
-    `set "SOURCE=${cmdEscape(p.source)}"`,
-    `set "BACKUP=${cmdEscape(p.backup)}"`,
-    ...(v ? [`set "MARKER=${cmdEscape(v.markerPath)}"`, `set "NOTE=${cmdEscape(v.failureNotePath)}"`] : []),
-    'set /a N=0',
-    ':waitpids',
-    'set "ALIVE=0"',
-    `for %%P in (${pids.join(' ')}) do (`,
-    '  tasklist /FI "PID eq %%P" /NH 2>nul | find /I ".exe" >nul && set "ALIVE=1"',
-    ')',
-    // No parenthesised block here: %N% would be expanded once, before the loop runs.
-    'if not "%ALIVE%"=="1" goto swapinit',
-    'set /a N+=1',
-    'if %N% GEQ 90 goto fail',
-    'ping -n 2 127.0.0.1 >nul',
-    'goto waitpids',
-    ':swapinit',
-    'set /a N=0',
-    ':swap',
-    'set /a N+=1',
-    'if %N% GEQ 30 goto fail',
-    'if exist "%BACKUP%" del /F /Q "%BACKUP%" >nul 2>&1',
-    'move /Y "%TARGET%" "%BACKUP%" >nul 2>&1',
-    'if errorlevel 1 (',
-    '  ping -n 2 127.0.0.1 >nul',
-    '  goto swap',
-    ')',
-    'move /Y "%SOURCE%" "%TARGET%" >nul 2>&1',
-    'if errorlevel 1 (',
-    '  move /Y "%BACKUP%" "%TARGET%" >nul 2>&1',
-    '  goto fail',
-    ')',
-    ...(v ? ['del /F /Q "%MARKER%" >nul 2>&1'] : []),
-    ...(p.relaunch ? ['start "" "%TARGET%"'] : []),
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `$target = ${psQuote(p.target)}`,
+    `$source = ${psQuote(p.source)}`,
+    `$backup = ${psQuote(p.backup)}`,
+    `$failNote = Join-Path $env:TEMP 'hologram-update-failed.txt'`,
+    ...(v ? [`$marker = ${psQuote(v.markerPath)}`, `$note = ${psQuote(v.failureNotePath)}`] : []),
+    `$waitFor = @(${pids.join(', ')})`,
+    '# 1. wait for the app to exit (max 90 s)',
+    '$alive = $true',
+    'for ($i = 0; $i -lt 90; $i++) {',
+    '  $alive = $false',
+    '  foreach ($id in $waitFor) { if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $alive = $true } }',
+    '  if (-not $alive) { break }',
+    '  Start-Sleep -Seconds 1',
+    '}',
+    "if ($alive) { Set-Content -LiteralPath $failNote -Value 'swap failed: app still running'; exit 1 }",
+    '# 2. keep the current exe as backup (retry: the portable launcher may hold it a moment longer)',
+    '$moved = $false',
+    'for ($i = 0; $i -lt 30; $i++) {',
+    '  if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }',
+    '  try { Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop; $moved = $true; break } catch { Start-Sleep -Seconds 1 }',
+    '}',
+    "if (-not $moved) { Set-Content -LiteralPath $failNote -Value 'swap failed: exe locked'; exit 1 }",
+    '# 3. put the new exe in place, or restore the old one',
+    'try { Move-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop } catch {',
+    '  Move-Item -LiteralPath $backup -Destination $target -Force',
+    "  Set-Content -LiteralPath $failNote -Value 'swap failed: new exe missing'",
+    '  exit 1',
+    '}',
+    ...(v ? ['Remove-Item -LiteralPath $marker -Force'] : []),
+    ...relaunch,
     ...(v
       ? [
-          'set /a V=0',
-          ':waitok',
-          'if exist "%MARKER%" goto done',
-          'set /a V+=1',
-          `if %V% GEQ ${v.timeoutSeconds} goto rollback`,
-          'ping -n 2 127.0.0.1 >nul',
-          'goto waitok',
-          ':rollback',
-          `taskkill /F /IM ${v.killImage} >nul 2>&1`,
-          'ping -n 3 127.0.0.1 >nul',
-          'set /a R=0',
-          ':rmnew',
-          'del /F /Q "%TARGET%" >nul 2>&1',
-          'if not exist "%TARGET%" goto restore',
-          'set /a R+=1',
-          'if %R% GEQ 15 goto giveup',
-          'ping -n 2 127.0.0.1 >nul',
-          'goto rmnew',
-          ':restore',
-          'move /Y "%BACKUP%" "%TARGET%" >nul 2>&1',
-          `>"%NOTE%" echo rolled-back ${v.label}`,
-          ...(p.relaunch ? ['start "" "%TARGET%"'] : []),
-          'exit /b 1',
-          ':giveup',
-          `>"%NOTE%" echo rollback-failed ${v.label}`,
-          'exit /b 2',
+          '# 4. the new version must write its marker in time, else roll back',
+          '$ok = $false',
+          `for ($i = 0; $i -lt ${v.timeoutSeconds}; $i++) {`,
+          '  if (Test-Path -LiteralPath $marker) { $ok = $true; break }',
+          '  Start-Sleep -Seconds 1',
+          '}',
+          'if (-not $ok) {',
+          `  Stop-Process -Name ${psQuote(v.killImage.replace(/\.exe$/, ''))} -Force`,
+          '  Start-Sleep -Seconds 2',
+          '  for ($i = 0; $i -lt 15; $i++) {',
+          '    Remove-Item -LiteralPath $target -Force',
+          '    if (-not (Test-Path -LiteralPath $target)) { break }',
+          '    Start-Sleep -Seconds 1',
+          '  }',
+          `  if (Test-Path -LiteralPath $target) { Set-Content -LiteralPath $note -Value 'rollback-failed ${v.label}'; exit 2 }`,
+          '  Move-Item -LiteralPath $backup -Destination $target -Force',
+          `  Set-Content -LiteralPath $note -Value 'rolled-back ${v.label}'`,
+          ...relaunch.map((l) => `  ${l}`),
+          '  exit 1',
+          '}',
         ]
-      : ['goto done']),
-    ':fail',
-    'echo swap failed>"%TEMP%\\hologram-update-failed.txt"',
-    'exit /b 1',
-    ':done',
-    '(goto) 2>nul & del "%~f0"',
+      : []),
+    'Remove-Item -LiteralPath $PSCommandPath -Force',
+    'exit 0',
   ];
   return lines.join('\r\n') + '\r\n';
 }

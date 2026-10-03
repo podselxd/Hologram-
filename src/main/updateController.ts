@@ -260,14 +260,15 @@ export class UpdateController {
 
   /** Spawns the swap script and quits so the exe can be replaced. */
   private swapAndQuit(source: string, backup: string, version: string | null, verify: boolean): void {
-    const script = path.join(os.tmpdir(), `hologram-update-${Date.now()}.cmd`);
+    const script = path.join(os.tmpdir(), `hologram-update-${Date.now()}.ps1`);
     fs.writeFileSync(
       script,
       buildSwapScript({
         target: this.target as string,
         source,
         backup,
-        pids: [process.pid, process.ppid],
+        // Only this process: the portable launcher's lock on the exe is handled by the move retries.
+        pids: [process.pid],
         relaunch: true,
         ...(verify && version
           ? {
@@ -284,7 +285,12 @@ export class UpdateController {
     );
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith('PORTABLE_EXECUTABLE')) delete env[key];
-    spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true, env }).unref();
+    // Detached = no console at all; the script only uses built-in cmdlets, so no window ever appears.
+    spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
+      { detached: true, stdio: 'ignore', windowsHide: true, env },
+    ).unref();
     this.log(`swap script started: ${script}`);
     app.quit();
   }

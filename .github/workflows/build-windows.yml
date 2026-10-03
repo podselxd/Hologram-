@@ -45,6 +45,22 @@ jobs:
             --title "Hologram (latest build)" \
             --notes "Unsigned development build of commit ${GITHUB_SHA}. Not used by the auto-updater. Windows SmartScreen will warn: More info -> Run anyway." \
             --target "${GITHUB_SHA}"
+      - name: Publish this version automatically when it has no release yet
+        if: github.ref_type == 'branch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tests and the build already passed. Never overwrite: skip if the release or the tag exists.
+          ver="v$(node -p "require('./package.json').version")"
+          if gh release view "$ver" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/$ver" >/dev/null 2>&1; then
+            echo "$ver is already published; nothing to do"
+          else
+            gh release create "$ver" release/Hologram.exe release/Hologram.exe.sha256 \
+              --title "Hologram $ver" \
+              --notes "Unsigned portable build of commit ${GITHUB_SHA}, published automatically because package.json moved to ${ver}. Windows SmartScreen will warn: More info -> Run anyway. Installed copies pick this up on their own." \
+              --target "${GITHUB_SHA}"
+          fi
       - name: Publish versioned release (used by the auto-updater)
         if: github.ref_type == 'tag'
         shell: bash

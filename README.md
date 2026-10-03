@@ -23,21 +23,32 @@ Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de cód
 
 ## Actualizaciones automáticas
 
-El `.exe` portable busca actualizaciones al abrir y cada 6 horas. **Nunca instala solo**: si hay una versión
-nueva, aparece en el menú del icono de la bandeja *"Descargar actualización vX"*, y después *"Reiniciar para
-actualizar"*. También hay *"Buscar actualizaciones"* y *"Volver a la versión anterior"* (el `.exe` previo se
-guarda como `Hologram.old.exe`, junto al actual).
+El `.exe` portable busca versiones nuevas al abrir y cada 6 horas. Hay dos modos (ventana de ajustes →
+Actualizaciones; por defecto **automático**):
 
+- **Automático:** descarga y verifica la versión nueva en segundo plano y la **instala sola la próxima vez que
+  abras Hologram** (o ya, con *Reiniciar ahora* en la bandeja). Avisa con una notificación al instalar.
+- **Preguntar:** no hace nada sin tu clic (*Descargar actualización*, luego *Reiniciar para actualizar*).
+
+Protecciones:
 - Solo mira los **releases con versión** (`v0.3.0`…), no el build de desarrollo `hologram-latest`.
-- Para publicar una versión: sube el número en `package.json` y crea un tag igual (`git tag v0.3.0 && git push
-  origin v0.3.0`). El CI construye en Windows y publica `Hologram.exe` y `Hologram.exe.sha256`.
-- La descarga se verifica con SHA-256 y tamaño. Eso detecta archivos corruptos, **no prueba autenticidad**: el
-  `.exe` no está firmado, así que la seguridad de las actualizaciones depende de tu cuenta de GitHub.
-- Solo funciona ejecutando el portable (necesita saber su ruta original). Desde el código fuente está desactivado.
-- Los fallos quedan en `update.log` dentro de la carpeta de datos y la app sigue con la versión actual.
-- Verificado: la lógica (versiones, descarga, checksum, rechazo de archivos corruptos o de otro repo) con pruebas
-  unitarias, y el script de reemplazo con archivos falsos en un runner de Windows. **No verificado:** una
-  actualización real de extremo a extremo (el portable de electron-builder y los antivirus pueden dar sorpresas).
+- **Un salto de versión mayor** (0.x → 1.x) nunca se instala solo.
+- La descarga se verifica con SHA-256 y tamaño, y se **recalcula el hash antes de instalar**.
+- **Vuelta atrás automática:** la versión nueva escribe una marca "arranqué bien" a los 20 s. Si no aparece en 90 s,
+  el script cierra la nueva, restaura `Hologram.old.exe` y te avisa. Si algo falla 2 veces, deja de intentarlo.
+- *Volver a la versión anterior* en la bandeja o en los ajustes, a mano, cuando quieras.
+- Los fallos quedan en `update.log` (carpeta de datos); la app sigue con la versión actual.
+
+Para publicar una versión, **sube el número en `package.json`**: cuando los tests y el build de Windows pasan, el
+CI publica `vX.Y.Z` solo (nunca sobrescribe una versión ya publicada). También sirve crear la release a mano con
+un tag `v*`. Solo funciona ejecutando el portable (necesita su ruta original); desde el código fuente está
+desactivado.
+
+Límites: el `.exe` **no está firmado**, así que la seguridad depende de tu cuenta de GitHub (el SHA-256 detecta
+corrupción, no prueba quién publicó). Verificado en Windows (CI): el script de reemplazo, la espera a que el
+proceso salga, el respaldo, la marca de arranque y la vuelta atrás con archivos falsos. **No verificado:** una
+actualización real de extremo a extremo con el portable de electron-builder y antivirus; la primera instalación
+automática real será de 0.2.1 a la siguiente versión (0.2.0 solo sabe el modo "preguntar").
 
 ## Uso desde el código fuente
 

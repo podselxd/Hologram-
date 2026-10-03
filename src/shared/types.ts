@@ -116,6 +116,8 @@ export interface UpdateSnapshot {
   state: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error';
   latest?: string;
   canRollback: boolean;
+  /** True when updates install themselves on the next start. */
+  auto: boolean;
   message?: string;
 }
 

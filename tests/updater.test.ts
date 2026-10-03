@@ -8,10 +8,13 @@ import {
   cmdEscape,
   downloadAndVerify,
   fetchLatest,
+  isAutoUpdateAllowed,
   isNewer,
+  parsePending,
   parseSha256,
   parseVersion,
   pickRelease,
+  sha256File,
   type ReleaseInfo,
 } from '../src/main/updater';
 
@@ -108,11 +111,13 @@ describe('downloadAndVerify', () => {
   const fakeFetch = (exe: Buffer, shaText: string) => async (url: string) =>
     url === 'sha' ? new Response(shaText) : new Response(new Uint8Array(exe));
 
-  it('writes the file when checksum and size match', async () => {
+  it('writes the file when checksum and size match, and returns the hash', async () => {
     const dest = path.join(tmp(), 'Hologram.update.exe');
-    await downloadAndVerify(info, dest, fakeFetch(payload, `${sha}  Hologram.exe`));
+    const result = await downloadAndVerify(info, dest, fakeFetch(payload, `${sha}  Hologram.exe`));
+    expect(result).toEqual({ sha256: sha, size: payload.length });
     expect(fs.readFileSync(dest)).toEqual(payload);
     expect(fs.existsSync(`${dest}.part`)).toBe(false);
+    expect(await sha256File(dest)).toBe(sha);
   });
   it('rejects a corrupted download and leaves nothing behind', async () => {
     const dest = path.join(tmp(), 'Hologram.update.exe');
@@ -158,5 +163,76 @@ describe('buildSwapScript', () => {
   });
   it('requires at least one valid pid', () => {
     expect(() => buildSwapScript({ ...params, pids: [0, -1, NaN] })).toThrow();
+  });
+});
+
+describe('auto-update rules', () => {
+  it('allows only newer versions inside the same major', () => {
+    expect(isAutoUpdateAllowed('0.2.0', '0.2.1')).toBe(true);
+    expect(isAutoUpdateAllowed('0.2.0', '0.9.0')).toBe(true);
+    expect(isAutoUpdateAllowed('0.9.0', '1.0.0')).toBe(false); // major jump needs the user
+    expect(isAutoUpdateAllowed('1.2.0', '2.0.0')).toBe(false);
+    expect(isAutoUpdateAllowed('0.2.0', '0.2.0')).toBe(false);
+    expect(isAutoUpdateAllowed('0.3.0', '0.2.9')).toBe(false); // never downgrade
+    expect(isAutoUpdateAllowed('x', '0.2.1')).toBe(false);
+  });
+});
+
+describe('parsePending', () => {
+  const ok = { version: '0.2.1', path: 'C:\\x\\Hologram.update.exe', sha256: 'a'.repeat(64), size: 100, attempts: 1 };
+  it('accepts a good record', () => {
+    expect(parsePending(ok)).toEqual(ok);
+  });
+  it('defaults attempts to 0', () => {
+    expect(parsePending({ ...ok, attempts: undefined })?.attempts).toBe(0);
+    expect(parsePending({ ...ok, attempts: -2 })?.attempts).toBe(0);
+  });
+  it('rejects tampered or incomplete records', () => {
+    expect(parsePending({ ...ok, sha256: 'zz' })).toBeNull();
+    expect(parsePending({ ...ok, version: 'latest' })).toBeNull();
+    expect(parsePending({ ...ok, size: 0 })).toBeNull();
+    expect(parsePending({ ...ok, path: 5 })).toBeNull();
+    expect(parsePending(null)).toBeNull();
+    expect(parsePending('x')).toBeNull();
+  });
+});
+
+describe('buildSwapScript with verification', () => {
+  const base = {
+    target: 'C:\\Users\\Ana\\Hologram.exe',
+    source: 'C:\\Users\\Ana\\Hologram.update.exe',
+    backup: 'C:\\Users\\Ana\\Hologram.old.exe',
+    pids: [10],
+    relaunch: true,
+    verify: {
+      markerPath: 'C:\\Users\\Ana\\AppData\\started-ok',
+      timeoutSeconds: 90,
+      killImage: 'Hologram.exe',
+      failureNotePath: 'C:\\Users\\Ana\\AppData\\update-note.txt',
+      label: '0.2.1',
+    },
+  };
+  it('waits for the marker and rolls back when it never appears', () => {
+    const s = buildSwapScript(base);
+    expect(s).toContain('if exist "%MARKER%" goto done');
+    expect(s).toContain('if %V% GEQ 90 goto rollback');
+    expect(s).toContain('taskkill /F /IM Hologram.exe');
+    expect(s).toContain('move /Y "%BACKUP%" "%TARGET%"');
+    expect(s).toContain('rolled-back 0.2.1');
+  });
+  it('deletes the stale marker before relaunching', () => {
+    const s = buildSwapScript(base);
+    expect(s.indexOf('del /F /Q "%MARKER%"')).toBeLessThan(s.indexOf('start "" "%TARGET%"'));
+  });
+  it('has no verification section without verify', () => {
+    const { verify: _verify, ...plain } = base;
+    void _verify;
+    expect(buildSwapScript(plain)).not.toContain('MARKER');
+  });
+  it('rejects unsafe values that would reach cmd.exe', () => {
+    expect(() => buildSwapScript({ ...base, verify: { ...base.verify, killImage: 'a.exe & calc' } })).toThrow();
+    expect(() => buildSwapScript({ ...base, verify: { ...base.verify, label: '1.0 & del *' } })).toThrow();
+    expect(() => buildSwapScript({ ...base, verify: { ...base.verify, timeoutSeconds: 0 } })).toThrow();
+    expect(() => buildSwapScript({ ...base, verify: { ...base.verify, timeoutSeconds: 9999 } })).toThrow();
   });
 });

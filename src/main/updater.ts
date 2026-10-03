@@ -85,7 +85,11 @@ export function parseSha256(text: string): string | null {
  * Downloads the new exe next to `destPath`, verifies SHA-256 (and size when known) and only then renames it
  * into place. This detects corruption; it does NOT prove authenticity (the exe is unsigned).
  */
-export async function downloadAndVerify(info: ReleaseInfo, destPath: string, fetchImpl: FetchLike): Promise<void> {
+export async function downloadAndVerify(
+  info: ReleaseInfo,
+  destPath: string,
+  fetchImpl: FetchLike,
+): Promise<{ sha256: string; size: number }> {
   const shaRes = await fetchImpl(info.shaUrl, { headers: HEADERS });
   if (!shaRes.ok) throw new Error(`checksum download failed: HTTP ${shaRes.status}`);
   const expected = parseSha256(await shaRes.text());
@@ -113,10 +117,24 @@ export async function downloadAndVerify(info: ReleaseInfo, destPath: string, fet
     const actual = hash.digest('hex');
     if (actual !== expected) throw new Error('SHA-256 mismatch: the download is corrupted');
     fs.renameSync(part, destPath);
+    return { sha256: actual, size };
   } catch (err) {
     fs.rmSync(part, { force: true });
     throw err;
   }
+}
+
+export interface SwapVerify {
+  /** The new version must create this file (the app writes it a few seconds after starting). */
+  markerPath: string;
+  /** If the marker does not appear in time, the old exe is restored. */
+  timeoutSeconds: number;
+  /** Image name killed before restoring (the failed new version), e.g. "Hologram.exe". */
+  killImage: string;
+  /** Written when a rollback happened, so the restored app can tell the user. */
+  failureNotePath: string;
+  /** Version being installed (digits and dots), only used in the failure note. */
+  label: string;
 }
 
 export interface SwapParams {
@@ -129,6 +147,8 @@ export interface SwapParams {
   /** Processes that must be gone before swapping (the app and its portable launcher). */
   pids: number[];
   relaunch: boolean;
+  /** Health check with automatic rollback. Omit for a plain swap (manual rollback). */
+  verify?: SwapVerify;
 }
 
 /** cmd.exe treats % as a variable marker even inside quotes. */
@@ -136,19 +156,32 @@ export function cmdEscape(value: string): string {
   return value.replace(/%/g, '%%');
 }
 
+const SAFE_IMAGE = /^[A-Za-z0-9._-]+\.exe$/;
+const SAFE_LABEL = /^[0-9.]{1,32}$/;
+
 /**
  * Batch script run by a detached cmd.exe after the app quits: waits for the app to exit, keeps the old exe as
- * a backup, puts the new one in place and relaunches. Restores the old exe if anything goes wrong.
+ * a backup, puts the new one in place and relaunches. With `verify`, waits for the new version to prove it
+ * started and otherwise restores the old exe. Restores the old exe too if the swap itself fails.
  */
 export function buildSwapScript(p: SwapParams): string {
   const pids = p.pids.filter((n) => Number.isInteger(n) && n > 0);
   if (pids.length === 0) throw new Error('at least one pid is required');
+  const v = p.verify;
+  if (v) {
+    if (!SAFE_IMAGE.test(v.killImage)) throw new Error('unsafe image name');
+    if (!SAFE_LABEL.test(v.label)) throw new Error('unsafe version label');
+    if (!Number.isInteger(v.timeoutSeconds) || v.timeoutSeconds < 1 || v.timeoutSeconds > 600) {
+      throw new Error('invalid verify timeout');
+    }
+  }
   const lines = [
     '@echo off',
     'setlocal EnableExtensions',
     `set "TARGET=${cmdEscape(p.target)}"`,
     `set "SOURCE=${cmdEscape(p.source)}"`,
     `set "BACKUP=${cmdEscape(p.backup)}"`,
+    ...(v ? [`set "MARKER=${cmdEscape(v.markerPath)}"`, `set "NOTE=${cmdEscape(v.failureNotePath)}"`] : []),
     'set /a N=0',
     ':waitpids',
     'set "ALIVE=0"',
@@ -177,8 +210,38 @@ export function buildSwapScript(p: SwapParams): string {
     '  move /Y "%BACKUP%" "%TARGET%" >nul 2>&1',
     '  goto fail',
     ')',
+    ...(v ? ['del /F /Q "%MARKER%" >nul 2>&1'] : []),
     ...(p.relaunch ? ['start "" "%TARGET%"'] : []),
-    'goto done',
+    ...(v
+      ? [
+          'set /a V=0',
+          ':waitok',
+          'if exist "%MARKER%" goto done',
+          'set /a V+=1',
+          `if %V% GEQ ${v.timeoutSeconds} goto rollback`,
+          'ping -n 2 127.0.0.1 >nul',
+          'goto waitok',
+          ':rollback',
+          `taskkill /F /IM ${v.killImage} >nul 2>&1`,
+          'ping -n 3 127.0.0.1 >nul',
+          'set /a R=0',
+          ':rmnew',
+          'del /F /Q "%TARGET%" >nul 2>&1',
+          'if not exist "%TARGET%" goto restore',
+          'set /a R+=1',
+          'if %R% GEQ 15 goto giveup',
+          'ping -n 2 127.0.0.1 >nul',
+          'goto rmnew',
+          ':restore',
+          'move /Y "%BACKUP%" "%TARGET%" >nul 2>&1',
+          `>"%NOTE%" echo rolled-back ${v.label}`,
+          ...(p.relaunch ? ['start "" "%TARGET%"'] : []),
+          'exit /b 1',
+          ':giveup',
+          `>"%NOTE%" echo rollback-failed ${v.label}`,
+          'exit /b 2',
+        ]
+      : ['goto done']),
     ':fail',
     'echo swap failed>"%TEMP%\\hologram-update-failed.txt"',
     'exit /b 1',
@@ -186,4 +249,46 @@ export function buildSwapScript(p: SwapParams): string {
     '(goto) 2>nul & del "%~f0"',
   ];
   return lines.join('\r\n') + '\r\n';
+}
+
+/** Auto-install is only allowed inside the same major version; anything bigger needs the user. */
+export function isAutoUpdateAllowed(current: string, candidate: string): boolean {
+  const a = parseVersion(current);
+  const b = parseVersion(candidate);
+  return !!a && !!b && a[0] === b[0] && isNewer(candidate, current);
+}
+
+export interface PendingUpdate {
+  version: string;
+  path: string;
+  sha256: string;
+  size: number;
+  /** How many times applying it was already attempted (guards against restart loops). */
+  attempts: number;
+}
+
+export function parsePending(raw: unknown): PendingUpdate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (
+    typeof r['version'] !== 'string' ||
+    !parseVersion(r['version']) ||
+    typeof r['path'] !== 'string' ||
+    typeof r['sha256'] !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(r['sha256']) ||
+    typeof r['size'] !== 'number' ||
+    !Number.isFinite(r['size']) ||
+    r['size'] <= 0
+  ) {
+    return null;
+  }
+  const attempts = typeof r['attempts'] === 'number' && Number.isInteger(r['attempts']) && r['attempts'] >= 0 ? r['attempts'] : 0;
+  return { version: r['version'], path: r['path'], sha256: r['sha256'], size: r['size'], attempts };
+}
+
+/** SHA-256 of a file, streamed (the exe is ~100 MB). */
+export async function sha256File(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer);
+  return hash.digest('hex');
 }

@@ -26,6 +26,11 @@ describe('sanitizePatch', () => {
     expect(sanitizePatch({ deviceId: 'x'.repeat(513) })).toEqual({});
     expect(sanitizePatch({ deviceId: 'cam-1' })).toEqual({ deviceId: 'cam-1' });
   });
+  it('validates the auto-update mode', () => {
+    expect(sanitizePatch({ autoUpdate: 'ask' })).toEqual({ autoUpdate: 'ask' });
+    expect(sanitizePatch({ autoUpdate: 'always' })).toEqual({});
+    expect(DEFAULT_SETTINGS.autoUpdate).toBe('auto');
+  });
   it('survives non-objects', () => {
     for (const v of [null, undefined, 5, 'x', []]) expect(sanitizePatch(v)).toEqual({});
   });

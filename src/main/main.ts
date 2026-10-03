@@ -199,6 +199,7 @@ function patchSettings(raw: unknown): void {
   settings = applyPatch(settings, patch);
   saveSettings(settings);
   broadcastSettings();
+  if (settings.autoUpdate !== before.autoUpdate) updater?.onModeChanged();
   if (settings.safeRender !== before.safeRender) {
     new Notification({
       title: 'Hologram',
@@ -383,8 +384,19 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // Launching the exe again just brings the settings window up.
   app.on('second-instance', openSettings);
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    updater = new UpdateController(
+      () => {
+        refreshTray();
+        send(settingsWin, CH.update, updater?.snapshot());
+      },
+      path.join(app.getPath('userData'), 'update.log'),
+      () => settings.autoUpdate,
+    );
+    // A verified update that was waiting for the next start: install it before showing anything.
+    if (await updater.applyPendingOnStart()) return;
+
     registerProtocol();
     registerIpc();
     createTracker();
@@ -392,11 +404,8 @@ if (!app.requestSingleInstanceLock()) {
     createOverlay();
     registerShortcuts();
     createTray();
-    updater = new UpdateController(() => {
-      refreshTray();
-      send(settingsWin, CH.update, updater?.snapshot());
-    }, path.join(app.getPath('userData'), 'update.log'));
     updater.start();
+    updater.reportPreviousUpdate();
     refreshTray();
     openSettings();
     scheduleDebugScreenshots();

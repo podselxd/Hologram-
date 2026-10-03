@@ -58,6 +58,7 @@ function patchThrottled(p: Partial<Settings>): void {
 function renderSettings(): void {
   $<HTMLSelectElement>('profile').value = settings.profile;
   $<HTMLSelectElement>('hands').value = String(settings.hands);
+  $<HTMLSelectElement>('autoUpdate').value = settings.autoUpdate;
   $<HTMLInputElement>('dotSize').value = String(settings.dotSize);
   $('dotSizeVal').textContent = `${Math.round(settings.dotSize * 100)} %`;
   $<HTMLInputElement>('smoothing').value = String(settings.smoothing);
@@ -94,6 +95,9 @@ function wireControls(): void {
     const v = (e.target as HTMLSelectElement).value;
     patch({ hands: v === '1' ? 1 : v === '2' ? 2 : 'auto' });
   });
+  $<HTMLSelectElement>('autoUpdate').addEventListener('change', (e) =>
+    patch({ autoUpdate: (e.target as HTMLSelectElement).value === 'ask' ? 'ask' : 'auto' }),
+  );
   $<HTMLInputElement>('dotSize').addEventListener('input', (e) => {
     patchThrottled({ dotSize: Number((e.target as HTMLInputElement).value) });
     $('dotSizeVal').textContent = `${Math.round(settings.dotSize * 100)} %`;
@@ -257,7 +261,7 @@ function renderUpdate(u: UpdateSnapshot): void {
   btn.hidden = false;
   switch (u.state) {
     case 'available':
-      text.textContent = `Hay una versión nueva: v${u.latest ?? '?'} (tienes v${u.version}).`;
+      text.textContent = `Hay una versión nueva: v${u.latest ?? '?'} (tienes v${u.version}).${u.message ? ` ${u.message}` : ''}`;
       btn.textContent = 'Descargar actualización';
       btn.className = 'primary';
       btn.onclick = () => api.updateAction('download');
@@ -268,9 +272,11 @@ function renderUpdate(u: UpdateSnapshot): void {
       btn.disabled = true;
       break;
     case 'ready':
-      text.textContent = `v${u.latest ?? '?'} descargada y verificada. Se reemplazará el .exe al reiniciar.`;
+      text.textContent = u.auto
+        ? `v${u.latest ?? '?'} descargada y verificada. Se instalará sola la próxima vez que abras Hologram.`
+        : `v${u.latest ?? '?'} descargada y verificada. Se reemplazará el .exe al reiniciar.`;
       text.className = 'msg ok';
-      btn.textContent = 'Reiniciar para actualizar';
+      btn.textContent = u.auto ? 'Reiniciar ahora' : 'Reiniciar para actualizar';
       btn.className = 'primary';
       btn.onclick = () => api.updateAction('apply');
       break;

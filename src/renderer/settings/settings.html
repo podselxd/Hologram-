@@ -175,6 +175,14 @@
           <input type="range" id="zoneOffsetY" min="-0.3" max="0.3" step="0.05" />
         </div>
         <div class="field">
+          <label for="clickMode">Cómo hacer clic</label>
+          <select id="clickMode">
+            <option value="pinch">Pinza (pulgar + índice)</option>
+            <option value="dwell">Mantener quieto (0.8 s, sin pinza)</option>
+          </select>
+          <span class="hint">"Mantener quieto" no necesita juntar los dedos; no permite arrastrar.</span>
+        </div>
+        <div class="field">
           <label for="pinchSensitivity">Sensibilidad de la pinza <span class="hint" id="pinchVal"></span></label>
           <input type="range" id="pinchSensitivity" min="0" max="1" step="0.05" />
           <span class="hint">Más alta = hace clic con los dedos más separados (más fácil, más clics sin querer).</span>
@@ -183,7 +191,7 @@
       <div>
         <table aria-label="Gestos">
           <tr><th scope="row">Mover</th><td>El cursor sigue el punto entre tu pulgar y tu índice.</td></tr>
-          <tr><th scope="row">Clic</th><td>Junta pulgar e índice (pinza) y suelta.</td></tr>
+          <tr><th scope="row">Clic</th><td>Junta las puntas de pulgar e índice (gesto 👌) y suelta. Un arco blanco junto al cursor se llena según te acercas. O elige "Mantener quieto".</td></tr>
           <tr><th scope="row">Doble clic</th><td>Dos pinzas rápidas sin mover la mano.</td></tr>
           <tr><th scope="row">Arrastrar</th><td>Mantén la pinza y mueve la mano.</td></tr>
           <tr><th scope="row">Clic derecho</th><td>Junta pulgar y dedo medio.</td></tr>

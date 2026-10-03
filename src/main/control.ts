@@ -31,7 +31,7 @@ export class HandControl {
 
   private configFor(s: Settings): GestureConfig {
     const { down, up } = pinchThresholds(s.pinchSensitivity);
-    return { zone: zoneFrom(s.zoneSize, s.zoneOffsetY), mirror: s.mirror, pinchDown: down, pinchUp: up };
+    return { zone: zoneFrom(s.zoneSize, s.zoneOffsetY), mirror: s.mirror, pinchDown: down, pinchUp: up, clickMode: s.clickMode };
   }
 
   async start(): Promise<void> {
@@ -81,7 +81,7 @@ export class HandControl {
 
   private tick(): void {
     if (this.settings.control === 'off') {
-      this.publish({ control: 'off', armed: false, mode: 'none', cursor: null, armProgress: 0 });
+      this.publish({ control: 'off', armed: false, mode: 'none', cursor: null, armProgress: 0, pinchProgress: 0, dwellProgress: 0 });
       return;
     }
     const now = Date.now();
@@ -139,6 +139,8 @@ export class HandControl {
       mode: state.mode,
       cursor: state.cursor,
       armProgress: state.armProgress,
+      pinchProgress: state.pinchProgress,
+      dwellProgress: state.dwellProgress,
       ...(this.input && !this.input.available && this.settings.control === 'on' ? { inputError: this.input.error } : {}),
       ...(now < this.flashUntil && this.flash ? { flash: this.flash } : {}),
     });

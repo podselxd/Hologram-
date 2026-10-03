@@ -15,6 +15,8 @@ export interface GestureConfig {
   pinchDown: number;
   /** …and opens above this (hysteresis). */
   pinchUp: number;
+  /** 'dwell': holding the cursor still clicks (no pinch needed). */
+  clickMode: 'pinch' | 'dwell';
 }
 
 export type GestureMode = 'none' | 'point' | 'pinch' | 'drag' | 'scroll';
@@ -34,6 +36,10 @@ export interface GestureState {
   cursor: { x: number; y: number } | null;
   /** 0..1 while the open palm is being held to toggle arming. */
   armProgress: number;
+  /** 0..1: how close thumb and index are to a pinch (for the on-screen meter). */
+  pinchProgress: number;
+  /** 0..1 while the cursor is held still in dwell mode. */
+  dwellProgress: number;
 }
 
 export function zoneFrom(size: number, offsetY: number): Zone {
@@ -45,7 +51,7 @@ export function zoneFrom(size: number, offsetY: number): Zone {
 /** Sensitivity 0..1: higher = the pinch triggers with fingers further apart. */
 export function pinchThresholds(sensitivity: number): { down: number; up: number } {
   const s = Math.min(1, Math.max(0, sensitivity));
-  const down = 0.25 + 0.2 * s;
+  const down = 0.25 + 0.45 * s;
   return { down, up: down + 0.15 };
 }
 
@@ -84,6 +90,9 @@ const LOST_MS = 300;
 const DRAG_START = 0.015;
 const INERTIA_TAU_S = 0.35;
 const INERTIA_STOP = 0.02;
+const DWELL_MS = 800;
+const DWELL_STILL = 0.012;
+const DWELL_REARM = 0.03;
 
 /**
  * Turns a stream of hand landmarks into cursor positions and mouse events. Pure: time is passed in, so it can be
@@ -108,6 +117,11 @@ export class GestureEngine {
   private inertiaV = 0;
   private lastTick = 0;
   private events: GestureEvent[] = [];
+  private pinchProgress = 0;
+  private dwellStart: number | null = null;
+  private dwellAnchor: { x: number; y: number } | null = null;
+  private dwellDone = false;
+  private dwellProgress = 0;
 
   constructor(private config: GestureConfig) {}
 
@@ -133,7 +147,14 @@ export class GestureEngine {
   }
 
   state(): GestureState {
-    return { armed: this.armed, mode: this.mode, cursor: this.cursor, armProgress: this.armProgress };
+    return {
+      armed: this.armed,
+      mode: this.mode,
+      cursor: this.cursor,
+      armProgress: this.armProgress,
+      pinchProgress: this.pinchProgress,
+      dwellProgress: this.dwellProgress,
+    };
   }
 
   private emit(e: GestureEvent): void {
@@ -189,8 +210,14 @@ export class GestureEngine {
       this.armProgress = 0;
     }
 
+    // How close to a pinch: 0 = fingers wide apart (2.5x the threshold), 1 = pinching.
+    this.pinchProgress = this.pinching ? 1 : Math.min(1, Math.max(0, (pinchDown * 2.5 - pose.pinchIndex) / (pinchDown * 1.5)));
+    const usePinch = this.config.clickMode === 'pinch';
+
     // --- pinch (left button) with hysteresis -------------------------------------------------------
-    if (!this.pinching && pose.pinchIndex < pinchDown) {
+    if (!usePinch) {
+      // dwell mode: no pinch clicks
+    } else if (!this.pinching && pose.pinchIndex < pinchDown) {
       this.pinching = true;
       this.dragging = false;
       this.downPos = raw;
@@ -238,6 +265,30 @@ export class GestureEngine {
       this.cursor = raw;
       this.mode = 'point';
     }
+
+    // --- dwell click: cursor held still for 0.8 s ----------------------------------------------------
+    if (this.config.clickMode === 'dwell' && this.mode === 'point' && !openPalm) {
+      if (!this.dwellAnchor || Math.hypot(raw.x - this.dwellAnchor.x, raw.y - this.dwellAnchor.y) > (this.dwellDone ? DWELL_REARM : DWELL_STILL)) {
+        this.dwellAnchor = raw;
+        this.dwellStart = t;
+        this.dwellDone = false;
+      }
+      if (!this.dwellDone && this.dwellStart !== null) {
+        this.dwellProgress = Math.min(1, (t - this.dwellStart) / DWELL_MS);
+        if (this.dwellProgress >= 1) {
+          this.emit({ type: 'down' });
+          this.emit({ type: 'up' });
+          this.dwellDone = true; // move away before the next click
+          this.dwellProgress = 0;
+        }
+      } else {
+        this.dwellProgress = 0;
+      }
+    } else {
+      this.dwellAnchor = null;
+      this.dwellStart = null;
+      this.dwellProgress = 0;
+    }
   }
 
   /** Call regularly (e.g. 60 Hz): handles lost tracking and scroll inertia. */
@@ -254,6 +305,9 @@ export class GestureEngine {
       this.cursor = null;
       this.armStart = null;
       this.armProgress = 0;
+      this.pinchProgress = 0;
+      this.dwellAnchor = null;
+      this.dwellProgress = 0;
     }
     if (this.inertiaV !== 0 && dt > 0) {
       this.emit({ type: 'scroll', dy: this.inertiaV * dt });

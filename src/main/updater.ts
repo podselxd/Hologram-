@@ -280,3 +280,16 @@ export async function sha256File(file: string): Promise<string> {
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer);
   return hash.digest('hex');
 }
+
+/**
+ * PowerShell that stops any swap script left running by versions <= 0.2.2 (cmd.exe-based; it flashed a console
+ * window for every command it ran) and deletes those script files. Built-in cmdlets only: no windows.
+ */
+export function legacyCleanupScript(): string {
+  return [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    "Get-CimInstance Win32_Process -Filter \"Name = 'cmd.exe'\" | Where-Object { $_.CommandLine -like '*hologram-update-*.cmd*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+    "Start-Sleep -Milliseconds 500",
+    "Get-ChildItem -LiteralPath $env:TEMP -Filter 'hologram-update-*.cmd' | Remove-Item -Force",
+  ].join('; ');
+}

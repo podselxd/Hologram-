@@ -148,6 +148,8 @@ export interface GestureView {
   mode: 'none' | 'point' | 'pinch' | 'drag' | 'scroll';
   cursor: { x: number; y: number } | null;
   armProgress: number;
+  pinchProgress: number;
+  dwellProgress: number;
   /** Set when the real mouse cannot be driven (not Windows, FFI failed…). */
   inputError?: string;
   /** Last click/scroll, for a visual flash. */

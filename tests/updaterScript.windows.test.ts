@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildSwapScript } from '../src/main/updater';
+import { buildSwapScript, legacyCleanupScript } from '../src/main/updater';
 
 /** Runs the real swap script with fake files. Only meaningful (and only run) on Windows. */
 describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
@@ -114,4 +114,20 @@ describe.skipIf(process.platform !== 'win32')('swap script on Windows', () => {
     expect(fs.readFileSync(v.failureNotePath, 'utf8')).toContain('rolled-back 9.9.9');
     fs.rmSync(dir, { recursive: true, force: true });
   }, 90_000);
+
+  it('legacy cleanup stops an old cmd swap script and deletes it', async () => {
+    const script = path.join(os.tmpdir(), `hologram-update-test-${Date.now()}.cmd`);
+    fs.writeFileSync(script, '@echo off\r\n:loop\r\nping -n 2 127.0.0.1 >nul\r\ngoto loop\r\n');
+    const old = spawn('cmd.exe', ['/c', script], { stdio: 'ignore', windowsHide: true });
+    const exited = new Promise<void>((resolve) => old.on('exit', () => resolve()));
+    await sleep(1500);
+    const cleaner = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', legacyCleanupScript()], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    await new Promise<void>((resolve) => cleaner.on('exit', () => resolve()));
+    await Promise.race([exited, sleep(10_000)]);
+    expect(old.exitCode !== null || old.signalCode !== null).toBe(true);
+    expect(fs.existsSync(script)).toBe(false);
+  }, 60_000);
 });

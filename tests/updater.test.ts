@@ -9,6 +9,7 @@ import {
   downloadAndVerify,
   fetchLatest,
   isAutoUpdateAllowed,
+  legacyCleanupScript,
   isNewer,
   parsePending,
   parseSha256,
@@ -233,5 +234,14 @@ describe('buildSwapScript with verification', () => {
     expect(() => buildSwapScript({ ...base, verify: { ...base.verify, label: '1.0 & del *' } })).toThrow();
     expect(() => buildSwapScript({ ...base, verify: { ...base.verify, timeoutSeconds: 0 } })).toThrow();
     expect(() => buildSwapScript({ ...base, verify: { ...base.verify, timeoutSeconds: 9999 } })).toThrow();
+  });
+});
+
+describe('legacyCleanupScript', () => {
+  it('only targets the old hologram swap scripts and opens no consoles', () => {
+    const s = legacyCleanupScript();
+    expect(s).toContain("*hologram-update-*.cmd*");
+    expect(s).toContain("Filter 'hologram-update-*.cmd'");
+    expect(s).not.toMatch(/tasklist|taskkill|ping |cmd \/c/i);
   });
 });

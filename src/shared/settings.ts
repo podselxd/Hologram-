@@ -5,6 +5,7 @@ export type AutoUpdate = 'auto' | 'ask';
 export type CameraBackend = 'auto' | 'directshow';
 export type ControlMode = 'off' | 'test' | 'on';
 export type DominantHand = 'right' | 'left';
+export type ClickMode = 'pinch' | 'dwell';
 
 export interface Settings {
   /** Chosen camera; undefined = system default. */
@@ -33,6 +34,8 @@ export interface Settings {
   zoneOffsetY: number;
   /** Higher = the pinch triggers with the fingers further apart. */
   pinchSensitivity: number;
+  /** pinch: thumb+index; dwell: hold the cursor still to click. */
+  clickMode: ClickMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zoneSize: 0.6,
   zoneOffsetY: -0.05,
   pinchSensitivity: 0.5,
+  clickMode: 'pinch',
 };
 
 export const LIMITS = {
@@ -82,6 +86,7 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
   if (r['cameraBackend'] === 'auto' || r['cameraBackend'] === 'directshow') out.cameraBackend = r['cameraBackend'];
   if (r['control'] === 'off' || r['control'] === 'test' || r['control'] === 'on') out.control = r['control'];
   if (r['dominantHand'] === 'right' || r['dominantHand'] === 'left') out.dominantHand = r['dominantHand'];
+  if (r['clickMode'] === 'pinch' || r['clickMode'] === 'dwell') out.clickMode = r['clickMode'];
   for (const key of ['zoneSize', 'zoneOffsetY', 'pinchSensitivity'] as const) {
     const v = r[key];
     if (typeof v === 'number' && Number.isFinite(v)) out[key] = clamp(v, LIMITS[key]);

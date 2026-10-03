@@ -67,6 +67,7 @@ function renderSettings(): void {
   $<HTMLSelectElement>('cameraBackend').value = settings.cameraBackend;
   $<HTMLSelectElement>('control').value = settings.control;
   $<HTMLSelectElement>('dominantHand').value = settings.dominantHand;
+  $<HTMLSelectElement>('clickMode').value = settings.clickMode;
   $<HTMLInputElement>('zoneSize').value = String(settings.zoneSize);
   $('zoneSizeVal').textContent = `${Math.round(settings.zoneSize * 100)} %`;
   $<HTMLInputElement>('zoneOffsetY').value = String(settings.zoneOffsetY);
@@ -120,6 +121,9 @@ function wireControls(): void {
       renderSettings();
     });
   }
+  $<HTMLSelectElement>('clickMode').addEventListener('change', (e) =>
+    patch({ clickMode: (e.target as HTMLSelectElement).value === 'dwell' ? 'dwell' : 'pinch' }),
+  );
   $('btnArm').addEventListener('click', () => api.settingsCommand('toggle-armed'));
   $<HTMLSelectElement>('cameraBackend').addEventListener('change', (e) =>
     patch({ cameraBackend: (e.target as HTMLSelectElement).value === 'directshow' ? 'directshow' : 'auto' }),

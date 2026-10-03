@@ -44,7 +44,7 @@ function hand(
 
 const config = (): GestureConfig => {
   const { down, up } = pinchThresholds(0.5);
-  return { zone: zoneFrom(0.6, 0), mirror: true, pinchDown: down, pinchUp: up };
+  return { zone: zoneFrom(0.6, 0), mirror: true, pinchDown: down, pinchUp: up, clickMode: 'pinch' };
 };
 const pointing = (o: { cx?: number; cy?: number; pinch?: number } = {}) =>
   hand({ ...o, ext: { thumb: true, index: true, middle: false, ring: false, pinky: false } });
@@ -190,5 +190,32 @@ describe('GestureEngine', () => {
     g.takeEvents();
     g.setArmed(false);
     expect(g.takeEvents()).toEqual([{ type: 'up' }, { type: 'armed', armed: false }]);
+  });
+
+  it('shows how close the fingers are to a pinch', () => {
+    const g = new GestureEngine(config());
+    g.onHand(pointing(), 0);
+    const wide = g.state().pinchProgress;
+    g.onHand(pointing({ pinch: 0.6 }), 33);
+    const closer = g.state().pinchProgress;
+    expect(closer).toBeGreaterThan(wide);
+    g.onHand(pointing({ pinch: 0.02 }), 66);
+    expect(g.state().pinchProgress).toBe(1);
+  });
+
+  it('dwell mode clicks when the cursor is held still, once, and never on pinch', () => {
+    const g = new GestureEngine({ ...config(), clickMode: 'dwell' });
+    g.setArmed(true);
+    g.takeEvents();
+    g.onHand(pointing({ pinch: 0.02 }), 0); // a pinch does nothing in dwell mode
+    g.onHand(pointing(), 30);
+    g.takeEvents();
+    for (let t = 60; t <= 900; t += 30) g.onHand(pointing(), t);
+    expect(g.takeEvents()).toEqual([{ type: 'down' }, { type: 'up' }]);
+    for (let t = 930; t <= 2500; t += 30) g.onHand(pointing(), t); // still: no repeat
+    expect(g.takeEvents()).toEqual([]);
+    g.onHand(pointing({ cx: 0.4 }), 2530); // move away, then hold again
+    for (let t = 2560; t <= 3500; t += 30) g.onHand(pointing({ cx: 0.4 }), t);
+    expect(g.takeEvents()).toEqual([{ type: 'down' }, { type: 'up' }]);
   });
 });

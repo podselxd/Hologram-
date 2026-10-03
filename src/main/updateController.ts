@@ -2,7 +2,7 @@ import { app, net, Notification, type MenuItemConstructorOptions } from 'electro
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { AutoUpdate } from '../shared/settings';
 import type { UpdateAction, UpdateSnapshot } from '../shared/types';
 import {
@@ -11,6 +11,7 @@ import {
   fetchLatest,
   isAutoUpdateAllowed,
   isNewer,
+  legacyCleanupScript,
   parsePending,
   sha256File,
   type PendingUpdate,
@@ -75,7 +76,21 @@ export class UpdateController {
     return path.join(this.userData, 'last-version.txt');
   }
 
+  /** Removes leftovers of the old cmd-based updater (and stops one that is still flashing windows). */
+  cleanupLegacy(): void {
+    if (process.platform !== 'win32') return;
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', legacyCleanupScript()],
+      { windowsHide: true, timeout: 20000 },
+      (err) => {
+        if (err) this.log(`legacy cleanup failed: ${String(err)}`);
+      },
+    );
+  }
+
   start(): void {
+    this.cleanupLegacy();
     // Tell a future update that this version starts fine (every run, harmless).
     setTimeout(() => {
       try {

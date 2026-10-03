@@ -190,6 +190,15 @@ function drawCursor(g: GestureView): boolean {
     ctx.fillStyle = ctx.strokeStyle;
     ctx.fill();
   }
+  // Pinch meter: an arc that fills as thumb and index get closer (dwell mode: fills while holding still).
+  const meter = g.dwellProgress > 0 ? g.dwellProgress : g.mode === 'point' ? g.pinchProgress : 0;
+  if (meter > 0.05) {
+    ctx.strokeStyle = meter >= 0.95 ? accent : 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 20, Math.PI / 2, Math.PI / 2 + meter * Math.PI * 2);
+    ctx.stroke();
+  }
   if (g.armProgress > 0) {
     ctx.strokeStyle = 'rgba(110,231,168,0.95)';
     ctx.lineWidth = 4;

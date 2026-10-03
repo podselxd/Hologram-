@@ -7,7 +7,22 @@ escritorio. La ventana es transparente, siempre visible y **deja pasar los clics
 > **Estado: fase 1.** Overlay + tracking + benchmark + HUD. Todavía **no** controla el mouse, el scroll ni las
 > ventanas (fases siguientes, ver más abajo).
 
-## Uso
+## Descargar el .exe (Windows)
+
+No necesitas Node ni `npm`. El `.exe` se construye en un runner de Windows con GitHub Actions:
+
+1. En GitHub: pestaña **Actions** → workflow **build-windows** → la última ejecución en verde.
+2. En **Artifacts** descarga `Hologram-windows` (un zip).
+3. Dentro hay dos archivos:
+   - `Hologram-<versión>-x64.exe` con el instalador (NSIS, por usuario, sin permisos de administrador).
+   - `Hologram-<versión>-x64.exe` portable: ejecutable único que no instala nada. Arranca más lento porque se
+     extrae en una carpeta temporal cada vez.
+
+El `.exe` **no está firmado**: Windows SmartScreen mostrará "Windows protegió su PC". Pulsa **Más información →
+Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de código). Para ejecutarlo o
+construirlo tú mismo: `npm run dist:win` en Windows (genera la carpeta `release/`).
+
+## Uso desde el código fuente
 
 Requisitos: Windows 10/11 (objetivo principal), Node 22+, webcam.
 

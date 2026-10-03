@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self' blob:" />
+<title>Hologram overlay</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 12px; top: 12px; font: 12px/1.45 Consolas, monospace; color: #bfe9ff;
+         background: rgba(5, 15, 30, 0.55); border: 1px solid rgba(120, 200, 255, 0.35); border-radius: 6px;
+         padding: 8px 10px; white-space: pre; pointer-events: none; }
+  #hud.hidden { display: none; }
+  #graph { display: block; margin-top: 6px; width: 240px; height: 40px; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud"><span id="hudText"></span><canvas id="graph" width="240" height="40"></canvas></div>
+<script src="overlay.js"></script>
+</body>
+</html>

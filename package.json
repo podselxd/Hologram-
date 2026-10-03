@@ -1,0 +1,29 @@
+{
+  "name": "hologram",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop hand-tracking overlay: crystal-blue hand landmarks drawn over the whole desktop.",
+  "main": "dist/main.js",
+  "scripts": {
+    "fetch-model": "node scripts/fetch-model.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "npm run fetch-model && npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.0.0",
+    "electron": "^44.5.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1"
+  }
+}

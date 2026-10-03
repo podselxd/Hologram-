@@ -10,6 +10,7 @@ import {
   protocol,
   screen,
   session,
+  shell,
   Tray,
 } from 'electron';
 import fs from 'node:fs';
@@ -32,6 +33,7 @@ import { trayIconPixels } from './iconPixels';
 import { loadSettings, saveSettings, writeReport } from './settings';
 import { UpdateController } from './updateController';
 import { HandControl } from './control';
+import { InstalledUpdater } from './installedUpdater';
 
 const SCHEME = 'app';
 const HOST = 'hologram';
@@ -46,7 +48,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let tray: Tray | null = null;
-let updater: UpdateController | null = null;
+let updater: UpdateController | InstalledUpdater | null = null;
 let overlay: BrowserWindow | null = null;
 let tracker: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
@@ -219,6 +221,7 @@ function patchSettings(raw: unknown): void {
   saveSettings(settings);
   broadcastSettings();
   control?.updateSettings(settings);
+  if (settings.openAtLogin !== before.openAtLogin) applyLoginItem();
   if (settings.autoUpdate !== before.autoUpdate) updater?.onModeChanged();
   if (settings.cameraBackend !== before.cameraBackend) {
     new Notification({ title: 'Hologram', body: 'Método de captura cambiado. Cierra y vuelve a abrir Hologram para aplicarlo.' }).show();
@@ -240,6 +243,7 @@ function registerIpc(): void {
     mode: cli.videoPath ? 'video' : 'camera',
     settings,
     safeRenderActive,
+    portable: !!process.env['PORTABLE_EXECUTABLE_FILE'],
     profileOverride: cli.profile,
     forceHands: cli.hands,
   }));
@@ -254,6 +258,7 @@ function registerIpc(): void {
     if (cmd === 'rerun-benchmark') broadcast({ type: 'rerun-benchmark' });
     else if (cmd === 'toggle-overlay') toggleOverlay();
     else if (cmd === 'toggle-armed') control?.toggleArmed();
+    else if (cmd === 'open-installer-page') void shell.openExternal('https://github.com/podselxd/Hologram-/releases/latest');
     else app.quit();
   });
   ipcMain.on(CH.setPreview, (e, enabled: unknown) => {
@@ -311,6 +316,13 @@ function registerIpc(): void {
     log('render:', JSON.stringify(stats));
     sendToSettings(CH.renderStats, stats);
   });
+}
+
+/** Windows login item: starts quietly (tray only) with --hidden. */
+function applyLoginItem(): void {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+  const exe = process.env['PORTABLE_EXECUTABLE_FILE'] ?? process.execPath;
+  app.setLoginItemSettings({ openAtLogin: settings.openAtLogin, path: exe, args: ['--hidden'] });
 }
 
 function setOverlayVisible(visible: boolean): void {
@@ -411,14 +423,15 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', openSettings);
   void app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
-    updater = new UpdateController(
-      () => {
-        refreshTray();
-        send(settingsWin, CH.update, updater?.snapshot());
-      },
-      path.join(app.getPath('userData'), 'update.log'),
-      () => settings.autoUpdate,
-    );
+    const onUpdateChange = (): void => {
+      refreshTray();
+      send(settingsWin, CH.update, updater?.snapshot());
+    };
+    const updateLog = path.join(app.getPath('userData'), 'update.log');
+    // Portable exe: our own swap updater. Installed app (NSIS): electron-updater.
+    updater = process.env['PORTABLE_EXECUTABLE_FILE']
+      ? new UpdateController(onUpdateChange, updateLog, () => settings.autoUpdate)
+      : new InstalledUpdater(onUpdateChange, updateLog, () => settings.autoUpdate);
     // An update is being installed by a previous run: do not start a second copy that would lock the exe.
     if (updater.swapInProgress()) {
       new Notification({ title: 'Hologram', body: 'Hologram se está actualizando. Espera unos segundos y se abrirá sola.' }).show();
@@ -445,7 +458,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     void control.start();
     refreshTray();
-    openSettings();
+    applyLoginItem();
+    // Started by Windows at login: stay in the tray.
+    if (!process.argv.includes('--hidden')) openSettings();
     scheduleDebugScreenshots();
   });
   app.on('window-all-closed', () => app.quit());

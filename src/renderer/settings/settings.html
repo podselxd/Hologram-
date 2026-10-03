@@ -229,6 +229,10 @@
 
   <section class="card" aria-labelledby="h-upd">
     <h2 id="h-upd">Actualizaciones</h2>
+    <div id="portableBox" hidden style="border:1px solid var(--warn);border-radius:8px;padding:10px;margin-bottom:12px">
+      <p style="margin:0 0 8px">Estás usando la versión <strong>portable</strong>: se descomprime entera cada vez que la abres y por eso tarda. Instala Hologram para que abra rápido (menú Inicio, escritorio y actualizaciones automáticas).</p>
+      <button id="btnInstaller" type="button" class="primary">Descargar el instalador</button>
+    </div>
     <div class="field">
       <label for="autoUpdate">Cuando hay una versión nueva</label>
       <select id="autoUpdate">
@@ -247,6 +251,7 @@
 
   <section class="card" aria-labelledby="h-sys">
     <h2 id="h-sys">Sistema y atajos</h2>
+    <label class="check"><input type="checkbox" id="openAtLogin" /><span>Abrir Hologram al iniciar Windows<br /><span class="hint">Arranca discreto, solo con el icono de la bandeja.</span></span></label>
     <label class="check"><input type="checkbox" id="safeRender" /><span>Modo seguro<br /><span class="hint">Desactiva la aceleración por hardware (usa solo CPU, más lento). Úsalo si el overlay parpadea. Hay que cerrar y abrir la app.</span></span></label>
     <table aria-label="Atajos de teclado globales">
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></th><td>Abrir esta ventana</td></tr>

@@ -1,6 +1,6 @@
 {
   "name": "hologram",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "private": true,
   "description": "Desktop hand-tracking overlay: crystal-blue hand landmarks drawn over the whole desktop.",
   "main": "dist/main.js",
@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "dist:win": "npm run fetch-model && npm run build && electron-builder --win portable --publish never",
+    "dist:win": "npm run fetch-model && npm run build && electron-builder --win --publish never",
     "pack:win": "npm run fetch-model && npm run build && electron-builder --win dir --publish never"
   },
   "devDependencies": {
@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
+    "electron-updater": "^6.8.9",
     "koffi": "^3.3.2"
   },
   "author": "Ismael Fern\u00e1ndez",
@@ -52,6 +53,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -62,6 +69,23 @@
     },
     "portable": {
       "artifactName": "Hologram.exe"
-    }
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hologram",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Hologram-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "podselxd",
+        "repo": "Hologram-",
+        "releaseType": "release"
+      }
+    ]
   }
 }

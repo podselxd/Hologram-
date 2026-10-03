@@ -38,6 +38,8 @@ export interface Settings {
   clickMode: ClickMode;
   /** true: an open palm held 1 s must arm control first; false: the cursor follows the hand right away. */
   requireArming: boolean;
+  /** Start Hologram (quietly, in the tray) when Windows starts. */
+  openAtLogin: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pinchSensitivity: 0.5,
   clickMode: 'pinch',
   requireArming: false,
+  openAtLogin: false,
 };
 
 export const LIMITS = {
@@ -91,6 +94,7 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
   if (r['dominantHand'] === 'right' || r['dominantHand'] === 'left') out.dominantHand = r['dominantHand'];
   if (r['clickMode'] === 'pinch' || r['clickMode'] === 'dwell') out.clickMode = r['clickMode'];
   if (typeof r['requireArming'] === 'boolean') out.requireArming = r['requireArming'];
+  if (typeof r['openAtLogin'] === 'boolean') out.openAtLogin = r['openAtLogin'];
   for (const key of ['zoneSize', 'zoneOffsetY', 'pinchSensitivity'] as const) {
     const v = r[key];
     if (typeof v === 'number' && Number.isFinite(v)) out[key] = clamp(v, LIMITS[key]);

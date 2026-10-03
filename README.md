@@ -7,21 +7,23 @@ escritorio. La ventana es transparente, siempre visible y **deja pasar los clics
 > **Estado: fase 2.** Overlay, tracking, ventana de ajustes y **control del mouse con las manos** (mover, clic, doble clic, arrastrar, clic derecho, scroll). Todavía no hay gestos de ventanas (`Alt+Tab`, etc.). Antes: no controlaba el mouse, el scroll ni las
 > ventanas (fases siguientes, ver más abajo).
 
-## Descargar el .exe (Windows)
+## Instalar (Windows)
 
-No necesitas Node ni `npm`. Un solo archivo, `Hologram.exe` (portable: no instala nada).
+1. En **Releases** del repo, abre la última versión y descarga **`Hologram-Setup-X.Y.Z.exe`**.
+2. Ejecútalo: se instala para tu usuario (sin permisos de administrador), crea accesos en el **menú Inicio** y el
+   **escritorio**, y aparece en *Aplicaciones instaladas* con su desinstalador. Tus ajustes se conservan.
+3. Opcional: ajustes → *Sistema* → **Abrir Hologram al iniciar Windows** (arranca discreto, en la bandeja).
 
-1. En GitHub, abre la sección **Releases** del repo y entra a **Hologram (latest build)**.
-2. Descarga **`Hologram.exe`** y ábrelo con doble clic.
+El instalador **no está firmado**: SmartScreen avisará la primera vez (*Más información → Ejecutar de todas formas*).
 
-Se reconstruye solo en un servidor de Windows (GitHub Actions) en cada cambio de la rama. Arranca más
-lento que una app instalada porque se extrae a una carpeta temporal cada vez.
-
-El `.exe` **no está firmado**: Windows SmartScreen mostrará "Windows protegió su PC". Pulsa **Más información →
-Ejecutar de todas formas**. Firmarlo cuesta dinero (certificado de firma de código). Para construirlo tú mismo:
-`npm run dist:win` en Windows (genera `release/Hologram.exe`).
+También hay un **`Hologram.exe` portable** (no instala nada), pero arranca lento porque se descomprime entero cada
+vez; la app te ofrece pasar al instalador.
 
 ## Actualizaciones automáticas
+
+**App instalada:** usa `electron-updater` con los releases de GitHub (`latest.yml`): descarga en segundo plano e
+instala al salir de Hologram, o con *Reiniciar ahora*; mismo modo *Preguntarme antes*. Lo de abajo describe el
+updater del **portable**.
 
 El `.exe` portable busca versiones nuevas al abrir y cada 6 horas. Hay dos modos (ventana de ajustes →
 Actualizaciones; por defecto **automático**):

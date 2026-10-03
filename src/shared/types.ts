@@ -111,6 +111,8 @@ export interface InitConfig {
   settings: Settings;
   /** Hardware acceleration was disabled at launch (safe mode is in effect right now). */
   safeRenderActive: boolean;
+  /** Running as the portable exe (slow start; the installer is recommended). */
+  portable: boolean;
   /** From the command line only; they take precedence over the saved settings. */
   profileOverride?: ProfileName;
   forceHands?: 1 | 2;
@@ -122,7 +124,7 @@ export type Command =
   | { type: 'set-preview'; enabled: boolean };
 
 /** Actions the settings window may ask the main process to run. */
-export type SettingsCommand = 'rerun-benchmark' | 'toggle-overlay' | 'toggle-armed' | 'quit';
+export type SettingsCommand = 'rerun-benchmark' | 'toggle-overlay' | 'toggle-armed' | 'open-installer-page' | 'quit';
 export type UpdateAction = 'check' | 'download' | 'apply' | 'rollback';
 
 export interface UpdateSnapshot {

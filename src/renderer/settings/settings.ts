@@ -80,6 +80,7 @@ function renderSettings(): void {
   $('smoothingVal').textContent = settings.smoothing < 0.34 ? 'más rápido' : settings.smoothing > 0.66 ? 'más suave' : 'equilibrado';
   $<HTMLInputElement>('mirror').checked = settings.mirror;
   $<HTMLInputElement>('safeRender').checked = settings.safeRender;
+  $<HTMLInputElement>('openAtLogin').checked = settings.openAtLogin;
   for (const c of COLORS) {
     const radio = document.querySelector<HTMLInputElement>(`input[name="color"][value="${c}"]`);
     if (radio) radio.checked = c === settings.color;
@@ -142,6 +143,8 @@ function wireControls(): void {
     renderSettings();
   });
   $<HTMLInputElement>('mirror').addEventListener('change', (e) => patch({ mirror: (e.target as HTMLInputElement).checked }));
+  $<HTMLInputElement>('openAtLogin').addEventListener('change', (e) => patch({ openAtLogin: (e.target as HTMLInputElement).checked }));
+  $('btnInstaller').addEventListener('click', () => api.settingsCommand('open-installer-page'));
   $<HTMLInputElement>('safeRender').addEventListener('change', (e) => patch({ safeRender: (e.target as HTMLInputElement).checked }));
   document.querySelectorAll<HTMLInputElement>('input[name="color"]').forEach((r) =>
     r.addEventListener('change', () => r.checked && patch({ color: r.value as ColorPreset })),
@@ -349,7 +352,7 @@ function renderUpdate(u: UpdateSnapshot): void {
   text.className = 'msg';
   btn.disabled = false;
   if (!u.enabled) {
-    text.textContent = `Versión ${u.version}. Las actualizaciones solo funcionan con el .exe portable.`;
+    text.textContent = `Versión ${u.version}. Las actualizaciones automáticas funcionan en la app instalada.`;
     btn.hidden = true;
     return;
   }
@@ -441,7 +444,9 @@ async function main(): Promise<void> {
   });
 
   settings = await api.getSettings();
-  safeRenderActive = (await api.getInit()).safeRenderActive;
+  const initCfg = await api.getInit();
+  safeRenderActive = initCfg.safeRenderActive;
+  $('portableBox').hidden = !initCfg.portable;
   $('safePill').hidden = !safeRenderActive;
   renderSettings();
   renderStats();

@@ -61,7 +61,18 @@ export interface DelegateMeasurement {
 }
 
 export interface TrackerStats {
+  /** Frames the camera actually delivered per second (track stats when available). */
   cameraFps: number;
+  /** Frames the hand model actually processed per second. */
+  processedFps: number;
+  /** What the camera agreed to, e.g. "640x480 @ 30". */
+  negotiated: string;
+  /** Highest frame rate the camera reports it supports (0 = unknown). */
+  maxFps: number;
+  /** "processor" = frames read straight from the camera; "video" = through a <video> element. */
+  pipeline: 'processor' | 'video';
+  /** Result of the automatic camera-mode probe, if one ran. */
+  probe?: string;
   inferenceAvgMs: number;
   inferenceP95Ms: number;
   delegate: DelegateName;
@@ -96,6 +107,8 @@ export interface CameraInfo {
 export interface InitConfig {
   mode: 'camera' | 'video';
   settings: Settings;
+  /** Hardware acceleration was disabled at launch (safe mode is in effect right now). */
+  safeRenderActive: boolean;
   /** From the command line only; they take precedence over the saved settings. */
   profileOverride?: ProfileName;
   forceHands?: 1 | 2;

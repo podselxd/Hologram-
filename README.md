@@ -4,7 +4,7 @@ Overlay de escritorio controlado por manos. La webcam detecta hasta **dos manos*
 dibuja sus 21 articulaciones como puntos azules cristalinos, con las líneas del esqueleto, sobre todo el
 escritorio. La ventana es transparente, siempre visible y **deja pasar los clics**.
 
-> **Estado: fase 1.** Overlay + tracking + benchmark + HUD. Todavía **no** controla el mouse, el scroll ni las
+> **Estado: fase 1.** Overlay + tracking + benchmark + ventana de ajustes. Todavía **no** controla el mouse, el scroll ni las
 > ventanas (fases siguientes, ver más abajo).
 
 ## Descargar el .exe (Windows)
@@ -72,24 +72,24 @@ Se abre sola al iniciar, al hacer clic en el icono de la bandeja, con `Ctrl+Alt+
 - **Cámara y rendimiento:** elegir cámara, perfil (automático, bajo, medio, alto), 1 o 2 manos y repetir el
   benchmark con sus mediciones.
 - **Apariencia:** color (azul, cian, violeta, verde), tamaño de los puntos, suavizado (menos temblor frente a
-  menos retraso), efecto espejo y HUD.
+  menos retraso) y efecto espejo.
 - **Actualizaciones**, **modo seguro** y la lista de atajos.
 
 Los cambios se aplican al momento y se guardan en `settings.json`. Teclado: todo es navegable con Tab, con foco
 visible y etiquetas en cada control.
 
 **Segundo plano:** la app deja un icono en la bandeja del sistema (junto al reloj). Clic en el icono: mostrar u
-ocultar el overlay. Clic derecho: HUD, cambiar de cámara, repetir benchmark, modo seguro y **Salir de Hologram**.
+abrir la ventana de ajustes. Clic derecho: overlay, cambiar de cámara, repetir benchmark, modo seguro y **Salir de Hologram**.
 Con el overlay oculto la **cámara se apaga** (no se captura nada) y se reactiva al mostrarlo.
 
-**Si el overlay parpadea:** mira en el HUD "Manos perdidas (5 s)". Si es alto, el parpadeo es tracking inestable
+**Si el overlay parpadea:** mira en la ventana de ajustes "Manos perdidas". Si es alto, el parpadeo es tracking inestable
 (poca luz, cámara de pocos FPS), no un fallo de dibujo. Si es 0 y sigue parpadeando, activa **Modo seguro** en el
 menú de la bandeja y reinicia la app: desactiva la aceleración por hardware (la inferencia pasa a CPU, más lenta).
 
 | Atajo global | Acción |
 |---|---|
 | `Ctrl+Alt+O` | Mostrar / ocultar el overlay |
-| `Ctrl+Alt+H` | Mostrar / ocultar el HUD |
+| `Ctrl+Alt+S` | Abrir la ventana de ajustes |
 | `Ctrl+Alt+C` | Cambiar de cámara |
 | `Ctrl+Alt+B` | Repetir el benchmark |
 | `Ctrl+Alt+Q` | Salir |
@@ -116,11 +116,28 @@ de la app (`%APPDATA%/hologram` en Windows).
 Además, el overlay baja efectos solo si los fotogramas se alargan (p95 > 22 ms) y los recupera tras 10 s
 estables.
 
+## Cámara: cómo se leen los FPS
+
+La ventana de ajustes separa tres números (antes salían mezclados en uno):
+
+- **Entregados:** cuadros que la cámara produce por segundo (estadísticas de la pista de video de Chromium).
+- **Pide:** el modo que la cámara aceptó (resolución y FPS) y su máximo declarado.
+- **Procesados:** cuadros que el modelo de manos alcanzó a analizar. Si es menor que "entregados", el límite es la
+  inferencia, no la cámara.
+
+Los cuadros se leen **directamente de la cámara** (`MediaStreamTrackProcessor`), sin pasar por un `<video>` en una
+ventana oculta: Windows frena las ventanas ocultas u ocultadas y eso podía bajar la cámara a ~15 FPS dentro de la
+app aunque la misma cámara fuera bien en otras apps. Además la app desactiva ese frenado de Chromium
+(`CalculateNativeWinOcclusion`, background/occluded throttling). Si la cámara entrega menos de 24 FPS, la app
+**prueba otros modos** (1280×720, 640×480, 848×480, 640×360, 320×240 pidiendo 30 FPS) y se queda con el más rápido;
+el resultado aparece en el diagnóstico. Verificado con una cámara simulada a 30 FPS (entregados 30, procesados según
+la GPU). **No verificado en Windows con tu cámara:** es justo lo que hay que confirmar.
+
 ## Qué significa "60 FPS" aquí
 
 - **Render del overlay:** objetivo 60 FPS limpios. Se dibuja con `requestAnimationFrame`, desacoplado del
   tracking, interpolando y prediciendo hasta 45 ms entre muestras de la cámara. Se mide con el **percentil 99
-  del tiempo entre fotogramas** y el conteo de fotogramas > 33 ms (HUD), no con el promedio.
+  del tiempo entre fotogramas** y el conteo de fotogramas > 33 ms (ventana de ajustes), no con el promedio.
 - **Tracking:** va al ritmo de **tu cámara** (muchas dan 30 FPS, y menos con poca luz) y de lo que tarde la
   inferencia. La interpolación hace que los puntos se vean fluidos, **pero la respuesta a tu mano no es más
   rápida que el tracking**.
@@ -175,7 +192,7 @@ pinta un fondo para revisar el contraste. Sin GPU real: `--use-gl=angle --use-an
 
 ## Hoja de ruta
 
-1. **Fase 1 (esta):** overlay, tracking, benchmark, HUD.
+1. **Fase 1 (esta):** overlay, tracking, benchmark, ventana de ajustes.
 2. Calibración y mouse virtual (primero en modo dry-run), con modo "armado" y atajo de desarme.
 3. Clic, arrastre, clic derecho, scroll tipo celular.
 4. Gestos de ventanas (mover, `Alt+Tab`, cierre seguro con `WM_CLOSE`).

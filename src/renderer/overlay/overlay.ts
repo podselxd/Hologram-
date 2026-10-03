@@ -4,27 +4,20 @@ import { FINGERTIPS, HAND_CONNECTIONS, toScreen } from '../../shared/mapping';
 import { HandPredictor } from '../../shared/predictor';
 import { PROFILES } from '../../shared/profiles';
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
-import { LANDMARK_COUNT, MAX_HANDS, type HandFrame, type Profile, type RenderStats, type TrackerStats } from '../../shared/types';
+import { LANDMARK_COUNT, MAX_HANDS, type HandFrame, type Profile, type RenderStats } from '../../shared/types';
 
 const api = window.hologram;
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d', { alpha: true }) as CanvasRenderingContext2D;
-const hud = document.getElementById('hud') as HTMLElement;
-const hudText = document.getElementById('hudText') as HTMLElement;
-const graph = document.getElementById('graph') as HTMLCanvasElement;
-const graphCtx = graph.getContext('2d') as CanvasRenderingContext2D;
 
 const FLOATS = LANDMARK_COUNT * 2;
 const TRAIL = 10;
 
 let profile: Profile = PROFILES.medium;
-let profileLabel = 'medium (pendiente de benchmark)';
 let degradeLevel = 0; // 0 none, 1 no trails, 2 no glow, 3 render scale 0.75
 let scale = 1;
 let width = 0;
 let height = 0;
-let status = 'Iniciando…';
-let trackerStats: TrackerStats | null = null;
 let latencyMs = 0;
 
 const predictors = Array.from({ length: MAX_HANDS }, () => new HandPredictor());
@@ -55,7 +48,6 @@ let coreSprite = makeSprite(32, palette.coreStops);
 function applySettings(next: Settings): void {
   const colorChanged = next.color !== settings.color;
   settings = next;
-  hud.classList.toggle('hidden', !settings.hud);
   if (colorChanged) {
     palette = paletteFor(settings.color);
     glowSprite = makeSprite(64, palette.glowStops);
@@ -91,11 +83,8 @@ api.onFrame((frame: HandFrame) => {
     predictor.push(performance.now(), incoming);
   }
 });
-api.onStats((s) => (trackerStats = s));
-api.onStatus((m) => (status = m));
 api.onProfile((sel) => {
   profile = PROFILES[sel.profile];
-  profileLabel = `${sel.profile} (${sel.delegate}, ${sel.numHands} mano${sel.numHands > 1 ? 's' : ''})${sel.forced ? ' [fijado, sin verificar]' : sel.meetsMinimum ? '' : ' [bajo mínimo]'}`;
   degradeLevel = 0;
   resize();
 });
@@ -211,7 +200,7 @@ function frame(ts: number): void {
   drawStats.record(performance.now() - t0);
 }
 
-// ---- HUD, adaptive quality, reporting --------------------------------------
+// ---- adaptive quality, reporting (the numbers are shown in the settings window) ----
 function renderStats(): RenderStats {
   const s = frameStats.summary();
   return {
@@ -227,41 +216,6 @@ function renderStats(): RenderStats {
     handsLost: handsLostRecently(performance.now()),
     latencyMs,
   };
-}
-
-function updateHud(): void {
-  const r = renderStats();
-  const t = trackerStats;
-  hudText.textContent = [
-    `Perfil:      ${profileLabel}${degradeLevel > 0 ? `  (degradado nivel ${degradeLevel})` : ''}`,
-    `Cámara:      ${t ? `${t.cameraFps.toFixed(1)} fps  ${t.resolution}  ${t.source}` : '—'}`,
-    `Inferencia:  ${t ? `${t.inferenceAvgMs.toFixed(1)} ms (p95 ${t.inferenceP95Ms.toFixed(1)})` : '—'}`,
-    `Render:      ${r.fps.toFixed(1)} fps  p99 ${r.p99Ms.toFixed(1)} ms  >33ms: ${r.over33Ms}/${r.frames}`,
-    `Latencia est: ${latencyMs.toFixed(0)} ms (captura -> dibujo)`,
-    `Manos perdidas (5 s): ${handsLostRecently(performance.now())}`,
-    `Estado:      ${status}`,
-    'Ctrl+Alt: O overlay  H HUD  C cámara  B benchmark  Q salir',
-  ].join('\n');
-
-  const w = graph.width;
-  const h = graph.height;
-  graphCtx.clearRect(0, 0, w, h);
-  const samples = frameStats.recent(120);
-  graphCtx.strokeStyle = 'rgba(255,255,255,0.25)';
-  graphCtx.beginPath();
-  const y16 = h - (16.7 / 50) * h;
-  graphCtx.moveTo(0, y16);
-  graphCtx.lineTo(w, y16);
-  graphCtx.stroke();
-  graphCtx.strokeStyle = '#7fd4ff';
-  graphCtx.beginPath();
-  samples.forEach((ms, i) => {
-    const x = (i / 120) * w;
-    const y = h - Math.min(ms / 50, 1) * h;
-    if (i === 0) graphCtx.moveTo(x, y);
-    else graphCtx.lineTo(x, y);
-  });
-  graphCtx.stroke();
 }
 
 let slowEvaluations = 0;
@@ -286,9 +240,8 @@ function adaptQuality(): void {
   }
 }
 
-setInterval(updateHud, 250);
 setInterval(adaptQuality, 2000);
-setInterval(() => api.sendRenderStats(renderStats()), 2000);
+setInterval(() => api.sendRenderStats(renderStats()), 1000);
 
 // Dev aid: ?bg=<css colour> paints a backdrop so screenshots can check contrast.
 const devBg = new URLSearchParams(location.search).get('bg');

@@ -7,16 +7,15 @@ import { toScreen } from '../src/shared/mapping';
 
 describe('sanitizePatch', () => {
   it('keeps valid fields', () => {
-    expect(sanitizePatch({ profile: 'high', hands: 2, hud: false, color: 'verde', mirror: false })).toEqual({
+    expect(sanitizePatch({ profile: 'high', hands: 2, color: 'verde', mirror: false })).toEqual({
       profile: 'high',
       hands: 2,
-      hud: false,
       color: 'verde',
       mirror: false,
     });
   });
   it('drops invalid fields and unknown keys', () => {
-    expect(sanitizePatch({ profile: 'ultra', hands: 3, color: 'rojo', hud: 'yes', evil: true, __proto__: { x: 1 } })).toEqual({});
+    expect(sanitizePatch({ profile: 'ultra', hands: 3, color: 'rojo', mirror: 'yes', evil: true, hud: true, __proto__: { x: 1 } })).toEqual({});
   });
   it('clamps numbers and rejects NaN', () => {
     expect(sanitizePatch({ smoothing: 9, dotSize: -4 })).toEqual({ smoothing: 1, dotSize: 0.6 });

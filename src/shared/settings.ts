@@ -10,7 +10,6 @@ export interface Settings {
   safeRender: boolean;
   profile: ProfileChoice;
   hands: HandsChoice;
-  hud: boolean;
   /** 0 = most responsive, 1 = smoothest. */
   smoothing: number;
   /** Multiplier for the dot radius. */
@@ -26,7 +25,6 @@ export const DEFAULT_SETTINGS: Settings = {
   safeRender: false,
   profile: 'auto',
   hands: 'auto',
-  hud: true,
   smoothing: 0.5,
   dotSize: 1,
   color: 'azul',
@@ -50,7 +48,6 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
     out.profile = r['profile'];
   }
   if (r['hands'] === 'auto' || r['hands'] === 1 || r['hands'] === 2) out.hands = r['hands'];
-  if (typeof r['hud'] === 'boolean') out.hud = r['hud'];
   if (typeof r['smoothing'] === 'number' && Number.isFinite(r['smoothing'])) out.smoothing = clamp(r['smoothing'], LIMITS.smoothing);
   if (typeof r['dotSize'] === 'number' && Number.isFinite(r['dotSize'])) out.dotSize = clamp(r['dotSize'], LIMITS.dotSize);
   if (typeof r['color'] === 'string' && (COLORS as readonly string[]).includes(r['color'])) out.color = r['color'] as ColorPreset;

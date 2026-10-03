@@ -92,10 +92,12 @@ export function chooseProfile(input: BenchmarkInput): ProfileSelection {
 
   const one = input.oneHand;
   const oneOk = one !== undefined && one.p95Ms <= THRESHOLDS.minimum;
+  // Below the minimum either way: still use the lighter configuration if 1 hand measured faster.
+  const oneFaster = one !== undefined && one.samples > 0 && one.p95Ms < best.p95Ms;
   return {
     profile: 'low',
     delegate: (one ?? best).delegate,
-    numHands: oneOk ? 1 : 2,
+    numHands: oneOk || oneFaster ? 1 : 2,
     meetsMinimum: oneOk,
     reliable: true,
     reason: oneOk

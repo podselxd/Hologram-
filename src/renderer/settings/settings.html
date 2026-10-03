@@ -67,6 +67,7 @@
 <body>
 <header>
   <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Hologram</h1><span class="ver" id="ver"></span></div>
+  <span class="pill off" id="safePill" hidden>Modo seguro: sin GPU</span>
   <span class="pill" id="camPill">Cámara: …</span>
   <button id="btnOverlay" type="button">Ocultar overlay</button>
   <button id="btnQuit" type="button" class="danger">Salir de Hologram</button>
@@ -84,6 +85,7 @@
           <dt>Confianza</dt><dd id="confInfo">—</dd>
           <dt>Perfil</dt><dd id="sProfile">—</dd>
           <dt>Cámara</dt><dd id="sCamera">—</dd>
+          <dt>Procesados</dt><dd id="sProcessed">—</dd>
           <dt>Inferencia</dt><dd id="sInfer">—</dd>
           <dt>Render</dt><dd id="sRender">—</dd>
           <dt>Latencia est.</dt><dd id="sLatency">—</dd>
@@ -94,6 +96,8 @@
           <label for="previewOn" style="font-weight:400">Mostrar también la imagen de la cámara<br /><span class="hint">Solo mientras esta ventana está abierta; sirve para revisar encuadre y luz. Se procesa en tu equipo, no se guarda.</span></label>
         </p>
         <p class="msg" id="sStatus" aria-live="polite"></p>
+        <h3 style="font-size:13px;margin:12px 0 4px;color:var(--accent)">Diagnóstico</h3>
+        <ul id="diag" class="msg" style="margin:0;padding-left:18px"></ul>
       </div>
     </div>
   </section>
@@ -149,7 +153,6 @@
       <span class="hint">Más suavizado reduce el temblor pero responde con algo de retraso.</span>
     </div>
     <label class="check"><input type="checkbox" id="mirror" /><span>Efecto espejo<br /><span class="hint">Mover la mano a la derecha mueve los puntos a la derecha.</span></span></label>
-    <label class="check"><input type="checkbox" id="hud" /><span>Mostrar el HUD de diagnóstico sobre el escritorio</span></label>
   </section>
 
   <section class="card" aria-labelledby="h-upd">
@@ -176,7 +179,6 @@
     <table aria-label="Atajos de teclado globales">
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></th><td>Abrir esta ventana</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></th><td>Mostrar u ocultar el overlay (apaga la cámara)</td></tr>
-      <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd></th><td>Mostrar u ocultar el HUD</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></th><td>Cambiar de cámara</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></th><td>Repetir el benchmark</td></tr>
       <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd></th><td>Salir</td></tr>

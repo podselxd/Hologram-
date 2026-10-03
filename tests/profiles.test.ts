@@ -41,10 +41,16 @@ describe('chooseProfile', () => {
     expect(sel.meetsMinimum).toBe(true);
   });
 
-  it('reports a machine that misses the minimum', () => {
+  it('reports a machine that misses the minimum and still picks the lighter 1-hand setup', () => {
     const sel = chooseProfile({ twoHands: [m('CPU', 80)], oneHand: m('CPU', 60, 1), reliable: true });
     expect(sel.meetsMinimum).toBe(false);
+    expect(sel.numHands).toBe(1);
     expect(sel.reason).toMatch(/no cumple el mínimo/);
+  });
+
+  it('keeps 2 hands when the 1-hand measurement was not faster or did not run', () => {
+    expect(chooseProfile({ twoHands: [m('CPU', 80)], oneHand: m('CPU', 90, 1), reliable: true }).numHands).toBe(2);
+    expect(chooseProfile({ twoHands: [m('CPU', 80)], reliable: true }).numHands).toBe(2);
   });
 
   it('survives having no measurements', () => {

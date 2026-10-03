@@ -58,7 +58,15 @@ let lastStatus = '';
 let previewWanted = false;
 
 // Must happen before the app is ready. Workaround if the transparent overlay flickers on some GPUs/drivers.
-if (cli.safeRender || settings.safeRender) app.disableHardwareAcceleration();
+const safeRenderActive = cli.safeRender || settings.safeRender;
+if (safeRenderActive) app.disableHardwareAcceleration();
+
+// The tracker lives in a hidden window. Windows/Chromium throttle hidden and occluded windows (timers, painting,
+// video), which can starve the camera pipeline; this tool needs them running at full rate.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 const dist = (): string => path.join(app.getAppPath(), 'dist');
 
@@ -216,6 +224,7 @@ function registerIpc(): void {
   ipcMain.handle(CH.init, (): InitConfig => ({
     mode: cli.videoPath ? 'video' : 'camera',
     settings,
+    safeRenderActive,
     profileOverride: cli.profile,
     forceHands: cli.hands,
   }));
@@ -316,7 +325,6 @@ function refreshTray(): void {
       { type: 'separator' },
       ...(updater ? [...updater.menuItems(), { type: 'separator' as const }] : []),
       { label: visible ? 'Ocultar overlay (apaga la cámara)' : 'Mostrar overlay', click: toggleOverlay },
-      { label: 'Mostrar / ocultar HUD', click: () => patchSettings({ hud: !settings.hud }) },
       { label: 'Cambiar de cámara', click: cycleCamera },
       { label: 'Repetir benchmark', click: () => broadcast({ type: 'rerun-benchmark' }) },
       { type: 'separator' },
@@ -346,7 +354,6 @@ function registerShortcuts(): void {
     if (!globalShortcut.register(accelerator, fn)) console.warn(`shortcut ${accelerator} could not be registered`);
   };
   bind('CommandOrControl+Alt+O', toggleOverlay);
-  bind('CommandOrControl+Alt+H', () => patchSettings({ hud: !settings.hud }));
   bind('CommandOrControl+Alt+C', cycleCamera);
   bind('CommandOrControl+Alt+B', () => broadcast({ type: 'rerun-benchmark' }));
   bind('CommandOrControl+Alt+S', openSettings);

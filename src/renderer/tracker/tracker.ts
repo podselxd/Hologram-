@@ -3,6 +3,7 @@ import { FrameStats, percentile } from '../../shared/frameStats';
 import { smoothingParams } from '../../shared/appearance';
 import { OneEuroFilter } from '../../shared/oneEuro';
 import { chooseProfile, PROFILES } from '../../shared/profiles';
+import { pickBestCameraMode, type CameraModeResult } from '../../shared/cameraModes';
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings';
 import {
   LANDMARK_COUNT,
@@ -20,32 +21,69 @@ const BASE = 'app://hologram';
 const api = window.hologram;
 const video = document.getElementById('video') as HTMLVideoElement;
 
+/**
+ * MediaStreamTrackProcessor reads frames straight from the camera track. Unlike a <video> element it does not
+ * depend on the page being painted, which Windows throttles for hidden/occluded windows (the tracker window is
+ * hidden). Not in TypeScript's DOM lib yet, hence the local types.
+ */
+interface TrackProcessorCtor {
+  new (init: { track: MediaStreamTrack; maxBufferSize?: number }): { readable: ReadableStream<VideoFrame> };
+}
+const TrackProcessor = (globalThis as unknown as { MediaStreamTrackProcessor?: TrackProcessorCtor }).MediaStreamTrackProcessor;
+/** Chromium's MediaStreamTrack.stats: frames the camera produced, independent of what we managed to process. */
+const trackStats = (t: MediaStreamTrack | undefined): { totalFrames: number } | undefined =>
+  (t as unknown as { stats?: { totalFrames?: number } } | undefined)?.stats?.totalFrames !== undefined
+    ? (t as unknown as { stats: { totalFrames: number } }).stats
+    : undefined;
+
+type FrameHandler = (src: TexImageSource, width: number, height: number, now: number, captureEpoch: number) => void;
+
 let init: InitConfig;
 let settings: Settings = DEFAULT_SETTINGS;
 let previewOn = false;
 let previewBusy = false;
 let lastPreviewAt = 0;
+let previewErrorLogged = false;
 let profile: Profile = PROFILES.medium;
 let delegate: DelegateName = 'GPU';
 let numHands: 1 | 2 = 2;
 let landmarker: HandLandmarker | null = null;
 let stream: MediaStream | null = null;
 let sourceLabel = '';
-let frameHandler: ((now: number, meta: VideoFrameCallbackMetadata) => void) | null = null;
+let frameHandler: FrameHandler | null = null;
 let loopRunning = false;
 let benchmarking = false;
 let paused = false;
+let pipeline: 'processor' | 'video' = 'video';
+let readerGen = 0;
+let reader: ReadableStreamDefaultReader<VideoFrame> | null = null;
+let lastW = 0;
+let lastH = 0;
+let probeTimer: number | undefined;
+let probedDevice: string | null = null;
+let probeSummary: string | undefined;
+
+// Frame counters (cumulative) for the FPS figures.
+let readFrames = 0;
+let presentedFrames = 0;
+let processedFrames = 0;
 
 const inferenceStats = new FrameStats(300);
 const filters: OneEuroFilter[][] = Array.from({ length: MAX_HANDS }, () =>
   Array.from({ length: LANDMARK_COUNT * 3 }, () => new OneEuroFilter(1.2, 0.05, 1.0)),
 );
 let activeSlots = new Set<number>();
-let lastPresented = 0;
-let lastPresentedAt = performance.now();
-let cameraFps = 0;
 
 const status = (message: string): void => api.sendStatus(message);
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const videoTrack = (): MediaStreamTrack | undefined => stream?.getVideoTracks()[0];
+
+/** Cumulative frames the camera delivered: track stats if available, else what reached us. */
+function deliveredFrames(): number {
+  const st = trackStats(videoTrack());
+  if (st) return st.totalFrames;
+  return pipeline === 'processor' ? readFrames : presentedFrames;
+}
 
 /** CLI flags win over the saved settings. */
 function effectiveProfile(): Profile['name'] | undefined {
@@ -61,11 +99,8 @@ function applySmoothing(): void {
 }
 
 /** Sends a small JPEG of the camera image, at most ~15 fps, only while the settings preview asks for it. */
-function maybeSendPreview(now: number): void {
-  if (!previewOn || previewBusy || now - lastPreviewAt < 66) return;
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  if (w === 0 || h === 0) return;
+function maybeSendPreview(src: TexImageSource, w: number, h: number, now: number): void {
+  if (!previewOn || previewBusy || now - lastPreviewAt < 66 || w === 0 || h === 0) return;
   previewBusy = true;
   lastPreviewAt = now;
   const width = 320;
@@ -76,12 +111,22 @@ function maybeSendPreview(now: number): void {
     previewBusy = false;
     return;
   }
-  g.drawImage(video, 0, 0, width, height);
+  try {
+    g.drawImage(src as CanvasImageSource, 0, 0, width, height); // synchronous copy: the VideoFrame may close after
+  } catch (err) {
+    if (!previewErrorLogged) console.warn('preview draw failed:', err);
+    previewErrorLogged = true;
+    previewBusy = false;
+    return;
+  }
   canvas
     .convertToBlob({ type: 'image/jpeg', quality: 0.6 })
     .then((blob) => blob.arrayBuffer())
     .then((buf) => api.sendPreview({ width, height, data: new Uint8Array(buf) }))
-    .catch(() => undefined)
+    .catch((err: unknown) => {
+      if (!previewErrorLogged) console.warn('preview failed:', err);
+      previewErrorLogged = true;
+    })
     .finally(() => {
       previewBusy = false;
     });
@@ -118,77 +163,212 @@ async function createLandmarker(d: DelegateName, hands: 1 | 2): Promise<HandLand
   });
 }
 
-async function startSource(p: Profile): Promise<void> {
+// ---- frame sources ----------------------------------------------------------------------------------------------
+
+function stopCamera(): void {
+  readerGen++;
+  void reader?.cancel().catch(() => undefined);
+  reader = null;
+  window.clearTimeout(probeTimer);
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
-  if (init.mode === 'video') {
+  if (init.mode !== 'video') {
+    video.pause();
     video.srcObject = null;
+  }
+}
+
+/** Opens the camera asking firmly for the profile's frame rate first, then softly if the camera refuses. */
+async function openCamera(p: Profile): Promise<MediaStream> {
+  const constraints = (deviceId: string | undefined, frameRate: ConstrainDouble): MediaStreamConstraints => ({
+    audio: false,
+    video: {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      width: { ideal: p.camera.width },
+      height: { ideal: p.camera.height },
+      frameRate,
+    },
+  });
+  const rates: ConstrainDouble[] = [{ ideal: p.camera.frameRate, min: 24 }, { ideal: p.camera.frameRate }];
+  const devices = settings.deviceId ? [settings.deviceId, undefined] : [undefined];
+  let lastError: unknown = new Error('no camera');
+  for (const deviceId of devices) {
+    for (const frameRate of rates) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints(deviceId, frameRate));
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+  throw lastError;
+}
+
+/** Reads frames straight from the track; maxBufferSize 1 keeps only the newest frame (lowest latency). */
+function startProcessor(track: MediaStreamTrack): void {
+  if (!TrackProcessor) return;
+  const gen = ++readerGen;
+  const r = new TrackProcessor({ track, maxBufferSize: 1 }).readable.getReader();
+  reader = r;
+  void (async () => {
+    for (;;) {
+      let res: ReadableStreamReadResult<VideoFrame>;
+      try {
+        res = await r.read();
+      } catch {
+        return;
+      }
+      if (res.done) return;
+      const frame = res.value;
+      if (gen !== readerGen) {
+        frame.close();
+        return;
+      }
+      readFrames++;
+      try {
+        lastW = frame.displayWidth;
+        lastH = frame.displayHeight;
+        const now = performance.now();
+        frameHandler?.(frame, lastW, lastH, now, performance.timeOrigin + now);
+      } catch (err) {
+        console.warn('frame handler failed:', err);
+      } finally {
+        frame.close();
+      }
+    }
+  })();
+}
+
+async function startSource(p: Profile): Promise<void> {
+  stopCamera();
+  if (init.mode === 'video') {
+    pipeline = 'video';
     video.src = `${BASE}/video`;
     video.loop = true;
     await video.play();
     sourceLabel = 'video file';
     return;
   }
-  const constraints = (deviceId?: string): MediaStreamConstraints => ({
-    audio: false,
-    video: {
-      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-      width: { ideal: p.camera.width },
-      height: { ideal: p.camera.height },
-      frameRate: { ideal: p.camera.frameRate },
-    },
-  });
-  try {
-    stream = await navigator.mediaDevices.getUserMedia(constraints(settings.deviceId));
-  } catch (err) {
-    if (!settings.deviceId) throw err;
-    stream = await navigator.mediaDevices.getUserMedia(constraints());
-  }
-  video.srcObject = stream;
-  await video.play();
-  const track = stream.getVideoTracks()[0];
+  stream = await openCamera(p);
+  const track = videoTrack();
   sourceLabel = track?.label ?? 'camera';
+  if (TrackProcessor && track) {
+    pipeline = 'processor';
+    startProcessor(track);
+  } else {
+    pipeline = 'video';
+    video.srcObject = stream;
+    await video.play();
+  }
   const devices = await navigator.mediaDevices.enumerateDevices();
   api.sendCameras(devices.filter((d) => d.kind === 'videoinput').map((d) => ({ deviceId: d.deviceId, label: d.label })));
+  scheduleProbe();
 }
 
-function ensureLoop(): void {
+/** <video> fallback (video files, or Chromium without MediaStreamTrackProcessor). */
+function ensureVideoLoop(): void {
   if (loopRunning) return;
   loopRunning = true;
+  let lastPresented = 0;
   const tick = (now: number, meta: VideoFrameCallbackMetadata): void => {
     video.requestVideoFrameCallback(tick);
     if (meta.presentedFrames !== undefined) {
-      const dt = now - lastPresentedAt;
-      if (dt >= 500) {
-        cameraFps = ((meta.presentedFrames - lastPresented) * 1000) / dt;
-        lastPresented = meta.presentedFrames;
-        lastPresentedAt = now;
-      }
+      presentedFrames += Math.max(0, meta.presentedFrames - lastPresented);
+      lastPresented = meta.presentedFrames;
     }
-    frameHandler?.(now, meta);
+    if (pipeline !== 'video') return;
+    lastW = video.videoWidth;
+    lastH = video.videoHeight;
+    frameHandler?.(video, lastW, lastH, now, performance.timeOrigin + (meta.captureTime ?? now));
   };
   video.requestVideoFrameCallback(tick);
 }
 
-function captureEpoch(now: number, meta: VideoFrameCallbackMetadata): number {
-  return performance.timeOrigin + (meta.captureTime ?? now);
+// ---- automatic camera-mode probe ----------------------------------------------------------------------------
+
+async function measureDeliveredFps(ms: number): Promise<number> {
+  const f0 = deliveredFrames();
+  const t0 = performance.now();
+  await sleep(ms);
+  return ((deliveredFrames() - f0) * 1000) / (performance.now() - t0);
 }
 
-function liveHandler(now: number, meta: VideoFrameCallbackMetadata): void {
+function scheduleProbe(): void {
+  window.clearTimeout(probeTimer);
+  probeTimer = window.setTimeout(() => void maybeProbe(), 3000);
+}
+
+/**
+ * If the camera delivers fewer than 24 fps, try other resolutions on the same track (asking for 30 fps) and keep
+ * the fastest. Runs once per camera per session.
+ */
+async function maybeProbe(): Promise<void> {
+  const track = videoTrack();
+  const key = settings.deviceId ?? 'default';
+  if (!track || paused || probedDevice === key) return;
+  const fps = await measureDeliveredFps(1500);
+  if (fps >= 24) return;
+  probedDevice = key;
+  status(`La cámara entrega ${fps.toFixed(1)} FPS: probando otros modos de cámara…`);
+  const before = track.getSettings();
+  const results: CameraModeResult[] = [
+    { width: before.width ?? 0, height: before.height ?? 0, fps, negotiatedFps: before.frameRate ?? 0 },
+  ];
+  const modes: Array<[number, number]> = [
+    [1280, 720],
+    [640, 480],
+    [848, 480],
+    [640, 360],
+    [320, 240],
+  ];
+  for (const [w, h] of modes) {
+    if (videoTrack() !== track) return; // camera changed meanwhile
+    try {
+      await track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30, min: 24 } });
+    } catch {
+      try {
+        await track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } });
+      } catch {
+        continue;
+      }
+    }
+    await sleep(1200); // let the camera settle on the new mode
+    const s = track.getSettings();
+    results.push({ width: s.width ?? w, height: s.height ?? h, fps: await measureDeliveredFps(1500), negotiatedFps: s.frameRate ?? 0 });
+  }
+  const best = pickBestCameraMode(results, profile.camera.width);
+  if (best) {
+    try {
+      await track.applyConstraints({ width: { ideal: best.width }, height: { ideal: best.height }, frameRate: { ideal: 30 } });
+    } catch {
+      // keep whatever mode is active
+    }
+  }
+  probeSummary = results.map((r) => `${r.width}x${r.height}: ${r.fps.toFixed(0)} FPS (pide ${r.negotiatedFps.toFixed(0)})`).join(' · ');
+  status(
+    best && best.fps >= 24
+      ? `Modo de cámara elegido: ${best.width}x${best.height} a ${best.fps.toFixed(0)} FPS.`
+      : `Ningún modo pasa de ${Math.max(...results.map((r) => r.fps)).toFixed(0)} FPS: es el límite de la cámara o su driver con esta configuración.`,
+  );
+}
+
+// ---- live tracking ---------------------------------------------------------------------------------------------
+
+function liveHandler(src: TexImageSource, w: number, h: number, now: number, captureEpoch: number): void {
   if (!landmarker) return;
+  processedFrames++;
   const t0 = performance.now();
-  const result = landmarker.detectForVideo(video, t0);
+  const result = landmarker.detectForVideo(src, t0);
   const inferenceMs = performance.now() - t0;
   inferenceStats.record(inferenceMs);
   if (result.landmarks.length === 0) {
     activeSlots = new Set();
-    maybeSendPreview(now);
+    maybeSendPreview(src, w, h, now);
     return;
   }
-  const t = captureEpoch(now, meta);
-  const hands = toSamples(result, t);
-  api.sendFrame({ t, inferenceMs, hands } satisfies HandFrame);
-  maybeSendPreview(now);
+  const hands = toSamples(result, captureEpoch);
+  api.sendFrame({ t: captureEpoch, inferenceMs, hands } satisfies HandFrame);
+  maybeSendPreview(src, w, h, now);
 }
 
 function toSamples(result: HandLandmarkerResult, t: number): HandSample[] {
@@ -220,14 +400,7 @@ function toSamples(result: HandLandmarkerResult, t: number): HandSample[] {
   return samples;
 }
 
-function nextFrame(): Promise<{ now: number; meta: VideoFrameCallbackMetadata }> {
-  return new Promise((resolve) => {
-    frameHandler = (now, meta) => {
-      frameHandler = null;
-      resolve({ now, meta });
-    };
-  });
-}
+// ---- benchmark -------------------------------------------------------------------------------------------------
 
 interface Pass {
   measurements: DelegateMeasurement[];
@@ -235,55 +408,66 @@ interface Pass {
 }
 
 /**
- * Runs the given landmarkers on the same frames; only frames with hands count
- * unless none ever appear. A delegate that is clearly much slower than the best
- * one is dropped early so the benchmark does not waste seconds on it.
+ * Runs the given landmarkers on the same frames (inside the frame handler, so it works with VideoFrames that are
+ * closed right after); only frames with hands count unless none ever appear. A delegate that is clearly much
+ * slower than the best one is dropped early so the benchmark does not waste seconds on it.
  */
-async function measure(
+function measure(
   list: Array<{ delegate: DelegateName; hands: 1 | 2; lm: HandLandmarker }>,
   wantFrames: number,
   timeoutMs: number,
 ): Promise<Pass> {
-  const withHands = list.map(() => [] as number[]);
-  const withoutHands = list.map(() => [] as number[]);
-  const active = list.map(() => true);
-  const start = performance.now();
-  let warmup = 10;
-  let handFrames = 0;
-  while (handFrames < wantFrames && performance.now() - start < timeoutMs) {
-    await nextFrame();
-    const ts = performance.now();
-    let anyHand = false;
-    const times = list.map(({ lm }, i) => {
-      if (!active[i]) return null;
-      const t0 = performance.now();
-      const r = lm.detectForVideo(video, ts);
-      if (r.landmarks.length > 0) anyHand = true;
-      return performance.now() - t0;
-    });
-    if (warmup > 0) {
-      warmup--;
-      continue;
-    }
-    times.forEach((ms, i) => {
-      if (ms !== null) (anyHand ? withHands : withoutHands)[i]?.push(ms);
-    });
-    if (anyHand) handFrames++;
-    dropClearlySlower(list.length, active, [...withHands.keys()].map((i) => [...(withHands[i] ?? []), ...(withoutHands[i] ?? [])]));
-  }
-  const measurements = list.map(({ delegate: d, hands }, i) => {
-    const enough = handFrames >= Math.min(wantFrames, 30);
-    const samples = (enough ? withHands[i] : [...(withHands[i] ?? []), ...(withoutHands[i] ?? [])]) ?? [];
-    const sorted = [...samples].sort((a, b) => a - b);
-    return {
-      delegate: d,
-      numHands: hands,
-      samples: sorted.length,
-      p50Ms: percentile(sorted, 0.5),
-      p95Ms: percentile(sorted, 0.95),
-    } satisfies DelegateMeasurement;
+  return new Promise((resolve) => {
+    const withHands = list.map(() => [] as number[]);
+    const withoutHands = list.map(() => [] as number[]);
+    const active = list.map(() => true);
+    let warmup = 10;
+    let handFrames = 0;
+    let finished = false;
+
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      frameHandler = null;
+      const enough = handFrames >= Math.min(wantFrames, 30);
+      const measurements = list.map(({ delegate: d, hands }, i) => {
+        const samples = (enough ? withHands[i] : [...(withHands[i] ?? []), ...(withoutHands[i] ?? [])]) ?? [];
+        const sorted = [...samples].sort((a, b) => a - b);
+        return {
+          delegate: d,
+          numHands: hands,
+          samples: sorted.length,
+          p50Ms: percentile(sorted, 0.5),
+          p95Ms: percentile(sorted, 0.95),
+        } satisfies DelegateMeasurement;
+      });
+      resolve({ measurements, handFrames });
+    };
+    const timer = window.setTimeout(finish, timeoutMs);
+
+    frameHandler = (src) => {
+      const ts = performance.now();
+      let anyHand = false;
+      const times = list.map(({ lm }, i) => {
+        if (!active[i]) return null;
+        const t0 = performance.now();
+        const r = lm.detectForVideo(src, ts);
+        if (r.landmarks.length > 0) anyHand = true;
+        return performance.now() - t0;
+      });
+      if (warmup > 0) {
+        warmup--;
+        return;
+      }
+      times.forEach((ms, i) => {
+        if (ms !== null) (anyHand ? withHands : withoutHands)[i]?.push(ms);
+      });
+      if (anyHand) handFrames++;
+      dropClearlySlower(list.length, active, [...withHands.keys()].map((i) => [...(withHands[i] ?? []), ...(withoutHands[i] ?? [])]));
+      if (handFrames >= wantFrames) finish();
+    };
   });
-  return { measurements, handFrames };
 }
 
 function dropClearlySlower(n: number, active: boolean[], all: number[][]): void {
@@ -385,20 +569,41 @@ async function runAndApplyBenchmark(): Promise<void> {
   }
 }
 
+// ---- reporting -------------------------------------------------------------------------------------------------
+
 function startStatsReporting(): void {
+  let lastDelivered = deliveredFrames();
+  let lastProcessed = processedFrames;
+  let lastAt = performance.now();
   setInterval(() => {
-    const s = inferenceStats.summary();
+    const now = performance.now();
+    const dt = Math.max(1, now - lastAt);
+    const delivered = deliveredFrames();
+    const cameraFps = Math.max(0, ((delivered - lastDelivered) * 1000) / dt);
+    const processedFps = ((processedFrames - lastProcessed) * 1000) / dt;
+    lastDelivered = delivered;
+    lastProcessed = processedFrames;
+    lastAt = now;
+    const track = videoTrack();
+    const s = track?.getSettings();
+    const caps = track && typeof track.getCapabilities === 'function' ? track.getCapabilities() : undefined;
+    const summary = inferenceStats.summary();
     api.sendStats({
-      cameraFps,
-      inferenceAvgMs: s.avg,
-      inferenceP95Ms: s.p95,
+      cameraFps: paused ? 0 : cameraFps,
+      processedFps: paused ? 0 : processedFps,
+      negotiated: s ? `${s.width ?? '?'}x${s.height ?? '?'} @ ${s.frameRate ? s.frameRate.toFixed(0) : '?'}` : '—',
+      maxFps: caps?.frameRate?.max ?? 0,
+      pipeline,
+      ...(probeSummary ? { probe: probeSummary } : {}),
+      inferenceAvgMs: summary.avg,
+      inferenceP95Ms: summary.p95,
       delegate,
       numHands,
       source: sourceLabel,
-      resolution: `${video.videoWidth}x${video.videoHeight}`,
+      resolution: `${lastW}x${lastH}`,
       paused,
     });
-  }, 500);
+  }, 1000);
 }
 
 /** Paused = camera released and no inference, so nothing is captured while the overlay is hidden. */
@@ -407,10 +612,7 @@ function setPaused(next: boolean): void {
   paused = next;
   if (paused) {
     frameHandler = null;
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = null;
-    video.pause();
-    video.srcObject = null;
+    stopCamera();
     activeSlots = new Set();
     status('En segundo plano: cámara apagada.');
   } else {
@@ -436,8 +638,8 @@ async function main(): Promise<void> {
     }
   });
   try {
+    ensureVideoLoop();
     await startSource(profile);
-    ensureLoop();
     startStatsReporting();
     const forced = effectiveProfile();
     if (forced) await applySelection(await forcedSelection(forced));

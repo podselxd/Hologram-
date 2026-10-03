@@ -30,6 +30,9 @@ let cameras: CameraInfo[] = [];
 let stats: TrackerStats | null = null;
 let aspect = 4 / 3;
 let lastAnnounced = -1;
+let safeRenderActive = false;
+let lastRender: RenderStats | null = null;
+let lastSelection: ProfileSelection | null = null;
 
 function sprite(size: number, stops: Array<[number, string]>): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -64,7 +67,6 @@ function renderSettings(): void {
   $<HTMLInputElement>('smoothing').value = String(settings.smoothing);
   $('smoothingVal').textContent = settings.smoothing < 0.34 ? 'más rápido' : settings.smoothing > 0.66 ? 'más suave' : 'equilibrado';
   $<HTMLInputElement>('mirror').checked = settings.mirror;
-  $<HTMLInputElement>('hud').checked = settings.hud;
   $<HTMLInputElement>('safeRender').checked = settings.safeRender;
   for (const c of COLORS) {
     const radio = document.querySelector<HTMLInputElement>(`input[name="color"][value="${c}"]`);
@@ -107,7 +109,6 @@ function wireControls(): void {
     renderSettings();
   });
   $<HTMLInputElement>('mirror').addEventListener('change', (e) => patch({ mirror: (e.target as HTMLInputElement).checked }));
-  $<HTMLInputElement>('hud').addEventListener('change', (e) => patch({ hud: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('safeRender').addEventListener('change', (e) => patch({ safeRender: (e.target as HTMLInputElement).checked }));
   document.querySelectorAll<HTMLInputElement>('input[name="color"]').forEach((r) =>
     r.addEventListener('change', () => r.checked && patch({ color: r.value as ColorPreset })),
@@ -173,7 +174,8 @@ function drawView(now: number): void {
   }
   g.stroke();
 
-  if (image && now - imageAt < 1500) {
+  // Keep the last camera image for a while: on a loaded machine encoding a preview can take seconds.
+  if (image && now - imageAt < 5000) {
     g.save();
     g.globalAlpha = 0.9;
     if (settings.mirror) {
@@ -214,16 +216,58 @@ function drawView(now: number): void {
 // ---- stats, benchmark, updates ---------------------------------------------------------------------
 function renderStats(): void {
   const s = stats;
-  $('sCamera').textContent = s ? `${s.cameraFps.toFixed(1)} FPS · ${s.resolution} · ${s.source || '—'}` : '—';
+  $('sCamera').textContent = s
+    ? `${s.cameraFps.toFixed(1)} FPS entregados · pide ${s.negotiated}${s.maxFps ? ` (máx. ${s.maxFps.toFixed(0)})` : ''} · ${s.source || '—'}`
+    : '—';
+  $('sProcessed').textContent = s
+    ? `${s.processedFps.toFixed(1)} FPS · ${s.pipeline === 'processor' ? 'lectura directa de la cámara' : 'vía <video>'}`
+    : '—';
   $('sInfer').textContent = s ? `${s.inferenceAvgMs.toFixed(1)} ms (p95 ${s.inferenceP95Ms.toFixed(1)}) · ${s.delegate}` : '—';
   const pill = $('camPill');
   const paused = s?.paused === true;
   pill.textContent = s ? (paused ? 'Cámara apagada (en segundo plano)' : 'Cámara activa') : 'Cámara: iniciando…';
   pill.className = `pill ${s ? (paused ? 'off' : 'ok') : ''}`;
   $('btnOverlay').textContent = paused ? 'Mostrar overlay y encender la cámara' : 'Ocultar overlay y apagar la cámara';
+  renderDiagnosis();
+}
+
+/** Suggestions derived only from measured numbers (no guessing about the room or the camera). */
+function renderDiagnosis(): void {
+  const items: string[] = [];
+  const s = stats;
+  const r = lastRender;
+  if (safeRenderActive) {
+    items.push('Modo seguro activo: sin GPU, el modelo corre en la CPU y va más lento. Desmárcalo en "Sistema y atajos" y vuelve a abrir Hologram.');
+  }
+  if (s && !s.paused && s.cameraFps > 0) {
+    const asked = Number(/@ (\d+)/.exec(s.negotiated)?.[1] ?? '0');
+    if (s.cameraFps < 24) {
+      items.push(
+        asked >= 29
+          ? `La cámara acepta ${asked} FPS pero entrega ${s.cameraFps.toFixed(0)}. Si el sondeo automático no encuentra un modo mejor, es el driver de la cámara (por ejemplo, compensación de poca luz) y no el procesamiento.`
+          : `La cámara entrega ${s.cameraFps.toFixed(0)} FPS en el modo ${s.negotiated}.`,
+      );
+      if (s.probe) items.push(`Modos probados: ${s.probe}.`);
+    }
+    if (s.processedFps < s.cameraFps * 0.8) {
+      items.push(
+        `El modelo procesa ${s.processedFps.toFixed(0)} de ${s.cameraFps.toFixed(0)} FPS: la inferencia no alcanza (p95 ${s.inferenceP95Ms.toFixed(0)} ms). Prueba 1 mano o el perfil bajo.`,
+      );
+    }
+    if (s.inferenceP95Ms > 100 && s.inferenceAvgMs < s.inferenceP95Ms / 2) {
+      items.push(`Hay tirones: la inferencia media es ${s.inferenceAvgMs.toFixed(0)} ms pero el p95 llega a ${s.inferenceP95Ms.toFixed(0)} ms.`);
+    }
+  }
+  if (r && r.handsLost > 3) {
+    items.push('Tracking inestable (la mano aparece y desaparece): mantén la mano completa dentro del cuadro y a 40–80 cm de la cámara.');
+  }
+  if (lastSelection?.forced) items.push('El perfil está fijado a mano: elige "Automático" para medir tu equipo.');
+  const list = $('diag');
+  list.replaceChildren(...(items.length ? items : ['Sin problemas detectados con los números actuales.']).map((t) => Object.assign(document.createElement('li'), { textContent: t })));
 }
 
 function renderProfile(sel: ProfileSelection): void {
+  lastSelection = sel;
   const verdict = sel.forced
     ? 'fijado a mano, sin verificar'
     : !sel.reliable
@@ -239,6 +283,7 @@ function renderProfile(sel: ProfileSelection): void {
 }
 
 function renderRender(r: RenderStats): void {
+  lastRender = r;
   $('sRender').textContent = `${r.fps.toFixed(1)} FPS · p99 ${r.p99Ms.toFixed(1)} ms · >33 ms: ${r.over33Ms}/${r.frames}${r.degradeLevel > 0 ? ` · degradado ${r.degradeLevel}` : ''}`;
   $('sLatency').textContent = `${r.latencyMs.toFixed(0)} ms (captura → dibujo)`;
   $('sLost').textContent = `${r.handsLost} en 5 s${r.handsLost > 3 ? ' (tracking inestable)' : ''}`;
@@ -335,6 +380,8 @@ async function main(): Promise<void> {
   api.onUpdate(renderUpdate);
 
   settings = await api.getSettings();
+  safeRenderActive = (await api.getInit()).safeRenderActive;
+  $('safePill').hidden = !safeRenderActive;
   renderSettings();
   renderStats();
   requestAnimationFrame(drawView);

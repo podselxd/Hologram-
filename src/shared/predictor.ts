@@ -11,7 +11,7 @@ export interface PredictorOptions {
   dropMs: number;
 }
 
-export const DEFAULT_PREDICTOR: PredictorOptions = { maxLeadMs: 45, holdMs: 120, dropMs: 280 };
+export const DEFAULT_PREDICTOR: PredictorOptions = { maxLeadMs: 45, holdMs: 150, dropMs: 350 };
 
 /**
  * Lets the renderer draw at display rate even though the camera/inference

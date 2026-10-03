@@ -1,4 +1,17 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, net, protocol, screen, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  net,
+  Notification,
+  protocol,
+  screen,
+  session,
+  Tray,
+} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,6 +26,7 @@ import type {
   TrackerStats,
 } from '../shared/types';
 import { parseCli } from './cli';
+import { trayIconPixels } from './iconPixels';
 import { loadSettings, saveSettings, writeReport } from './settings';
 
 const SCHEME = 'app';
@@ -27,9 +41,13 @@ protocol.registerSchemesAsPrivileged([
   { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
+let tray: Tray | null = null;
 let overlay: BrowserWindow | null = null;
 let tracker: BrowserWindow | null = null;
 let settings = loadSettings();
+
+// Must happen before the app is ready. Workaround if the transparent overlay flickers on some GPUs/drivers.
+if (cli.safeRender || settings.safeRender) app.disableHardwareAcceleration();
 let cameras: CameraInfo[] = [];
 let lastSelection: ProfileSelection | null = null;
 let lastTrackerStats: TrackerStats | null = null;
@@ -153,6 +171,62 @@ function registerIpc(): void {
   });
 }
 
+function setOverlayVisible(visible: boolean): void {
+  if (!overlay || overlay.isDestroyed()) return;
+  if (visible) overlay.showInactive();
+  else overlay.hide();
+  // Hidden overlay = camera off: nothing is captured while the tool is in the background.
+  broadcast({ type: 'set-paused', paused: !visible });
+  refreshTray();
+}
+
+function toggleOverlay(): void {
+  setOverlayVisible(!(overlay?.isVisible() ?? false));
+}
+
+function toggleSafeRender(): void {
+  settings = { ...settings, safeRender: !settings.safeRender };
+  saveSettings(settings);
+  new Notification({
+    title: 'Hologram',
+    body: settings.safeRender
+      ? 'Modo seguro activado. Cierra y vuelve a abrir Hologram para aplicarlo.'
+      : 'Modo seguro desactivado. Cierra y vuelve a abrir Hologram para aplicarlo.',
+  }).show();
+  refreshTray();
+}
+
+function refreshTray(): void {
+  if (!tray) return;
+  const visible = overlay?.isVisible() ?? false;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: visible ? 'Ocultar overlay (apaga la cámara)' : 'Mostrar overlay', click: toggleOverlay },
+      { label: 'Mostrar / ocultar HUD', click: () => broadcast({ type: 'toggle-hud' }) },
+      { label: 'Cambiar de cámara', click: cycleCamera },
+      { label: 'Repetir benchmark', click: () => broadcast({ type: 'rerun-benchmark' }) },
+      { type: 'separator' },
+      {
+        label: 'Modo seguro (sin aceleración por hardware, reinicia la app)',
+        type: 'checkbox',
+        checked: settings.safeRender === true,
+        click: toggleSafeRender,
+      },
+      { type: 'separator' },
+      { label: 'Salir de Hologram', click: () => app.quit() },
+    ]),
+  );
+}
+
+function createTray(): void {
+  const size = 32;
+  const icon = nativeImage.createFromBitmap(trayIconPixels(size), { width: size, height: size });
+  tray = new Tray(icon);
+  tray.setToolTip('Hologram');
+  tray.on('click', toggleOverlay);
+  refreshTray();
+}
+
 function cycleCamera(): void {
   if (cameras.length < 2) return;
   const i = cameras.findIndex((c) => c.deviceId === settings.deviceId);
@@ -167,11 +241,7 @@ function registerShortcuts(): void {
   const bind = (accelerator: string, fn: () => void): void => {
     if (!globalShortcut.register(accelerator, fn)) console.warn(`shortcut ${accelerator} could not be registered`);
   };
-  bind('CommandOrControl+Alt+O', () => {
-    if (!overlay) return;
-    if (overlay.isVisible()) overlay.hide();
-    else overlay.showInactive();
-  });
+  bind('CommandOrControl+Alt+O', toggleOverlay);
   bind('CommandOrControl+Alt+H', () => broadcast({ type: 'toggle-hud' }));
   bind('CommandOrControl+Alt+C', cycleCamera);
   bind('CommandOrControl+Alt+B', () => broadcast({ type: 'rerun-benchmark' }));
@@ -200,6 +270,7 @@ if (!app.requestSingleInstanceLock()) {
     hardenSession();
     createOverlay();
     registerShortcuts();
+    createTray();
     scheduleDebugScreenshot();
   });
   app.on('window-all-closed', () => app.quit());

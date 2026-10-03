@@ -30,6 +30,14 @@ npm install
 npm start          # descarga el modelo la primera vez, compila y abre el overlay
 ```
 
+**Segundo plano:** la app deja un icono en la bandeja del sistema (junto al reloj). Clic en el icono: mostrar u
+ocultar el overlay. Clic derecho: HUD, cambiar de cámara, repetir benchmark, modo seguro y **Salir de Hologram**.
+Con el overlay oculto la **cámara se apaga** (no se captura nada) y se reactiva al mostrarlo.
+
+**Si el overlay parpadea:** mira en el HUD "Manos perdidas (5 s)". Si es alto, el parpadeo es tracking inestable
+(poca luz, cámara de pocos FPS), no un fallo de dibujo. Si es 0 y sigue parpadeando, activa **Modo seguro** en el
+menú de la bandeja y reinicia la app: desactiva la aceleración por hardware (la inferencia pasa a CPU, más lenta).
+
 | Atajo global | Acción |
 |---|---|
 | `Ctrl+Alt+O` | Mostrar / ocultar el overlay |

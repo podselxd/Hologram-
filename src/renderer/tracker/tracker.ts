@@ -28,6 +28,7 @@ let sourceLabel = '';
 let frameHandler: ((now: number, meta: VideoFrameCallbackMetadata) => void) | null = null;
 let loopRunning = false;
 let benchmarking = false;
+let paused = false;
 
 const inferenceStats = new FrameStats(300);
 const filters: OneEuroFilter[][] = Array.from({ length: MAX_HANDS }, () =>
@@ -331,14 +332,36 @@ function startStatsReporting(): void {
   }, 500);
 }
 
+/** Paused = camera released and no inference, so nothing is captured while the overlay is hidden. */
+function setPaused(next: boolean): void {
+  if (next === paused || benchmarking) return;
+  paused = next;
+  if (paused) {
+    frameHandler = null;
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.pause();
+    video.srcObject = null;
+    activeSlots = new Set();
+    status('En segundo plano: cámara apagada.');
+  } else {
+    void startSource(profile).then(() => {
+      if (!paused && landmarker) frameHandler = liveHandler;
+      status('Cámara reactivada.');
+    });
+  }
+}
+
 async function main(): Promise<void> {
   init = await api.getInit();
   api.onCommand((cmd) => {
     if (cmd.type === 'set-camera') {
       init = { ...init, deviceId: cmd.deviceId };
-      void startSource(profile);
+      if (!paused) void startSource(profile);
     } else if (cmd.type === 'rerun-benchmark') {
-      void runAndApplyBenchmark();
+      if (!paused) void runAndApplyBenchmark();
+    } else if (cmd.type === 'set-paused') {
+      setPaused(cmd.paused);
     }
   });
   try {

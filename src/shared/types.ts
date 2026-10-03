@@ -95,4 +95,5 @@ export interface InitConfig {
 export type Command =
   | { type: 'toggle-hud' }
   | { type: 'set-camera'; deviceId: string }
-  | { type: 'rerun-benchmark' };
+  | { type: 'rerun-benchmark' }
+  | { type: 'set-paused'; paused: boolean };

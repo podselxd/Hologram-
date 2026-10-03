@@ -6,7 +6,7 @@ import { LANDMARK_COUNT, MAX_HANDS, type HandFrame, type Profile, type RenderSta
 
 const api = window.hologram;
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true }) as CanvasRenderingContext2D;
+const ctx = canvas.getContext('2d', { alpha: true }) as CanvasRenderingContext2D;
 const hud = document.getElementById('hud') as HTMLElement;
 const hudText = document.getElementById('hudText') as HTMLElement;
 const graph = document.getElementById('graph') as HTMLCanvasElement;
@@ -63,7 +63,6 @@ function resize(): void {
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  prevBox.valid = false;
 }
 window.addEventListener('resize', resize);
 
@@ -97,16 +96,6 @@ api.onCommand((c) => {
 });
 
 // ---- drawing -------------------------------------------------------------
-const prevBox = { valid: false, x0: 0, y0: 0, x1: 0, y1: 0 };
-const curBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
-
-function includePoint(x: number, y: number): void {
-  if (x < curBox.x0) curBox.x0 = x;
-  if (y < curBox.y0) curBox.y0 = y;
-  if (x > curBox.x1) curBox.x1 = x;
-  if (y > curBox.y1) curBox.y1 = y;
-}
-
 function pointRadius(i: number): number {
   if ((FINGERTIPS as readonly number[]).includes(i)) return 7;
   return i === 0 ? 6 : 4.5;
@@ -139,7 +128,6 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
   for (let i = 0; i < LANDMARK_COUNT; i++) {
     const x = pts[i * 2] as number;
     const y = pts[i * 2 + 1] as number;
-    includePoint(x, y);
     const r = pointRadius(i);
     if (glow) ctx.drawImage(glowSprite, x - r * 3, y - r * 3, r * 6, r * 6);
     ctx.drawImage(coreSprite, x - r, y - r, r * 2, r * 2);
@@ -165,7 +153,6 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
         ctx.moveTo(buf[i0] as number, buf[i0 + 1] as number);
         ctx.lineTo(buf[i1] as number, buf[i1 + 1] as number);
         ctx.stroke();
-        includePoint(buf[i0] as number, buf[i0 + 1] as number);
       }
     }
   } else {
@@ -174,16 +161,14 @@ function drawHand(slot: number, pts: Float32Array, alpha: number): void {
   ctx.globalAlpha = 1;
 }
 
-function draw(now: number): void {
-  curBox.x0 = curBox.y0 = Infinity;
-  curBox.x1 = curBox.y1 = -Infinity;
+const wasVisible = new Array<boolean>(MAX_HANDS).fill(false);
+const lostAt: number[] = [];
+let drewLastFrame = false;
 
-  // Clear only where something was drawn last frame.
-  if (prevBox.valid) {
-    const pad = 70;
-    ctx.clearRect(prevBox.x0 - pad, prevBox.y0 - pad, prevBox.x1 - prevBox.x0 + pad * 2, prevBox.y1 - prevBox.y0 + pad * 2);
-    prevBox.valid = false;
-  }
+function draw(now: number): void {
+  // Full clear every frame that has (or had) content: partial clears can leave
+  // stale pixels when the compositor swaps buffers. Idle frames cost nothing.
+  if (drewLastFrame) ctx.clearRect(0, 0, width, height);
 
   let drew = false;
   for (let slot = 0; slot < MAX_HANDS; slot++) {
@@ -191,19 +176,22 @@ function draw(now: number): void {
     const out = scratch[slot] as Float32Array;
     const alpha = predictor.sample(now, out);
     if (alpha <= 0) {
+      if (wasVisible[slot]) lostAt.push(now);
+      wasVisible[slot] = false;
       trailFill[slot] = 0;
       continue;
     }
+    wasVisible[slot] = true;
     drawHand(slot, out, alpha);
     drew = true;
   }
-  if (drew) {
-    prevBox.valid = true;
-    prevBox.x0 = curBox.x0;
-    prevBox.y0 = curBox.y0;
-    prevBox.x1 = curBox.x1;
-    prevBox.y1 = curBox.y1;
-  }
+  drewLastFrame = drew;
+}
+
+/** Times a hand vanished in the last 5 s: a high number means unstable tracking, not a drawing bug. */
+function handsLostRecently(now: number): number {
+  while (lostAt.length > 0 && now - (lostAt[0] as number) > 5000) lostAt.shift();
+  return lostAt.length;
 }
 
 // ---- main loop -----------------------------------------------------------
@@ -242,6 +230,7 @@ function updateHud(): void {
     `Inferencia:  ${t ? `${t.inferenceAvgMs.toFixed(1)} ms (p95 ${t.inferenceP95Ms.toFixed(1)})` : '—'}`,
     `Render:      ${r.fps.toFixed(1)} fps  p99 ${r.p99Ms.toFixed(1)} ms  >33ms: ${r.over33Ms}/${r.frames}`,
     `Latencia est: ${latencyMs.toFixed(0)} ms (captura -> dibujo)`,
+    `Manos perdidas (5 s): ${handsLostRecently(performance.now())}`,
     `Estado:      ${status}`,
     'Ctrl+Alt: O overlay  H HUD  C cámara  B benchmark  Q salir',
   ].join('\n');

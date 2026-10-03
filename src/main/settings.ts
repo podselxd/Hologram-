@@ -4,6 +4,8 @@ import path from 'node:path';
 
 export interface Settings {
   deviceId?: string;
+  /** Start with hardware acceleration disabled (workaround for GPU/driver flicker). */
+  safeRender?: boolean;
 }
 
 const file = (): string => path.join(app.getPath('userData'), 'settings.json');
@@ -11,8 +13,12 @@ const file = (): string => path.join(app.getPath('userData'), 'settings.json');
 export function loadSettings(): Settings {
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    if (raw && typeof raw === 'object' && typeof (raw as Settings).deviceId === 'string') {
-      return { deviceId: (raw as Settings).deviceId };
+    if (raw && typeof raw === 'object') {
+      const r = raw as Settings;
+      return {
+        ...(typeof r.deviceId === 'string' ? { deviceId: r.deviceId } : {}),
+        ...(r.safeRender === true ? { safeRender: true } : {}),
+      };
     }
   } catch {
     // first run or unreadable file: defaults

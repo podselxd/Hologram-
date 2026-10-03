@@ -128,7 +128,11 @@ La ventana de ajustes separa tres números (antes salían mezclados en uno):
 Los cuadros se leen **directamente de la cámara** (`MediaStreamTrackProcessor`), sin pasar por un `<video>` en una
 ventana oculta: Windows frena las ventanas ocultas u ocultadas y eso podía bajar la cámara a ~15 FPS dentro de la
 app aunque la misma cámara fuera bien en otras apps. Además la app desactiva ese frenado de Chromium
-(`CalculateNativeWinOcclusion`, background/occluded throttling). Si la cámara entrega menos de 24 FPS, la app
+(`CalculateNativeWinOcclusion`, background/occluded throttling) y decodifica la cámara por software
+(sin captura D3D11 ni MJPEG por GPU), porque con algunas webcams ese camino de Windows entrega la mitad de cuadros
+(15 en vez de 30) mientras que en modo seguro llegaban 30; la GPU sigue libre para el modelo. Si aun así no llega,
+hay un **método de captura "Compatible" (DirectShow)** en los ajustes (requiere reiniciar). El límite duro es el
+máximo de la cámara: una webcam de 30 FPS no puede dar 50 lecturas reales por segundo. Si la cámara entrega menos de 24 FPS, la app
 **prueba otros modos** (1280×720, 640×480, 848×480, 640×360, 320×240 pidiendo 30 FPS) y se queda con el más rápido;
 el resultado aparece en el diagnóstico. Verificado con una cámara simulada a 30 FPS (entregados 30, procesados según
 la GPU). **No verificado en Windows con tu cámara:** es justo lo que hay que confirmar.

@@ -63,7 +63,15 @@ if (safeRenderActive) app.disableHardwareAcceleration();
 
 // The tracker lives in a hidden window. Windows/Chromium throttle hidden and occluded windows (timers, painting,
 // video), which can starve the camera pipeline; this tool needs them running at full rate.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+// Camera frames are decoded in software: on some webcams Chromium's GPU capture/MJPEG path on Windows delivers
+// half the frames (15 instead of 30). The GPU stays available for the hand model. Unknown feature names are ignored.
+app.commandLine.appendSwitch(
+  'disable-features',
+  'CalculateNativeWinOcclusion,MediaFoundationD3D11VideoCapture,MediaFoundationD3D11VideoCaptureZeroCopy',
+);
+app.commandLine.appendSwitch('disable-accelerated-mjpeg-decode');
+// Fallback chosen in the settings window: capture through DirectShow instead of Media Foundation.
+if (settings.cameraBackend === 'directshow') app.commandLine.appendSwitch('force-directshow');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -208,6 +216,9 @@ function patchSettings(raw: unknown): void {
   saveSettings(settings);
   broadcastSettings();
   if (settings.autoUpdate !== before.autoUpdate) updater?.onModeChanged();
+  if (settings.cameraBackend !== before.cameraBackend) {
+    new Notification({ title: 'Hologram', body: 'Método de captura cambiado. Cierra y vuelve a abrir Hologram para aplicarlo.' }).show();
+  }
   if (settings.safeRender !== before.safeRender) {
     new Notification({
       title: 'Hologram',

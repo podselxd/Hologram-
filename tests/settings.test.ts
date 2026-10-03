@@ -25,6 +25,11 @@ describe('sanitizePatch', () => {
     expect(sanitizePatch({ deviceId: 'x'.repeat(513) })).toEqual({});
     expect(sanitizePatch({ deviceId: 'cam-1' })).toEqual({ deviceId: 'cam-1' });
   });
+  it('validates the camera backend', () => {
+    expect(sanitizePatch({ cameraBackend: 'directshow' })).toEqual({ cameraBackend: 'directshow' });
+    expect(sanitizePatch({ cameraBackend: 'v4l2' })).toEqual({});
+    expect(DEFAULT_SETTINGS.cameraBackend).toBe('auto');
+  });
   it('validates the auto-update mode', () => {
     expect(sanitizePatch({ autoUpdate: 'ask' })).toEqual({ autoUpdate: 'ask' });
     expect(sanitizePatch({ autoUpdate: 'always' })).toEqual({});

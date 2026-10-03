@@ -2,6 +2,7 @@ export type ProfileChoice = 'auto' | 'low' | 'medium' | 'high';
 export type HandsChoice = 'auto' | 1 | 2;
 export type ColorPreset = 'azul' | 'cian' | 'violeta' | 'verde';
 export type AutoUpdate = 'auto' | 'ask';
+export type CameraBackend = 'auto' | 'directshow';
 
 export interface Settings {
   /** Chosen camera; undefined = system default. */
@@ -19,6 +20,8 @@ export interface Settings {
   mirror: boolean;
   /** auto: download and install on the next start; ask: only when the user says so. */
   autoUpdate: AutoUpdate;
+  /** Windows capture API; 'directshow' is a compatibility fallback (needs a restart). */
+  cameraBackend: CameraBackend;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   color: 'azul',
   mirror: true,
   autoUpdate: 'auto',
+  cameraBackend: 'auto',
 };
 
 export const LIMITS = { smoothing: [0, 1], dotSize: [0.6, 1.8] } as const;
@@ -53,6 +57,7 @@ export function sanitizePatch(raw: unknown): Partial<Settings> {
   if (typeof r['color'] === 'string' && (COLORS as readonly string[]).includes(r['color'])) out.color = r['color'] as ColorPreset;
   if (typeof r['mirror'] === 'boolean') out.mirror = r['mirror'];
   if (r['autoUpdate'] === 'auto' || r['autoUpdate'] === 'ask') out.autoUpdate = r['autoUpdate'];
+  if (r['cameraBackend'] === 'auto' || r['cameraBackend'] === 'directshow') out.cameraBackend = r['cameraBackend'];
   return out;
 }
 

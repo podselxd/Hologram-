@@ -62,6 +62,7 @@ function renderSettings(): void {
   $<HTMLSelectElement>('profile').value = settings.profile;
   $<HTMLSelectElement>('hands').value = String(settings.hands);
   $<HTMLSelectElement>('autoUpdate').value = settings.autoUpdate;
+  $<HTMLSelectElement>('cameraBackend').value = settings.cameraBackend;
   $<HTMLInputElement>('dotSize').value = String(settings.dotSize);
   $('dotSizeVal').textContent = `${Math.round(settings.dotSize * 100)} %`;
   $<HTMLInputElement>('smoothing').value = String(settings.smoothing);
@@ -97,6 +98,9 @@ function wireControls(): void {
     const v = (e.target as HTMLSelectElement).value;
     patch({ hands: v === '1' ? 1 : v === '2' ? 2 : 'auto' });
   });
+  $<HTMLSelectElement>('cameraBackend').addEventListener('change', (e) =>
+    patch({ cameraBackend: (e.target as HTMLSelectElement).value === 'directshow' ? 'directshow' : 'auto' }),
+  );
   $<HTMLSelectElement>('autoUpdate').addEventListener('change', (e) =>
     patch({ autoUpdate: (e.target as HTMLSelectElement).value === 'ask' ? 'ask' : 'auto' }),
   );
@@ -244,7 +248,7 @@ function renderDiagnosis(): void {
     if (s.cameraFps < 24) {
       items.push(
         asked >= 29
-          ? `La cámara acepta ${asked} FPS pero entrega ${s.cameraFps.toFixed(0)}. Si el sondeo automático no encuentra un modo mejor, es el driver de la cámara (por ejemplo, compensación de poca luz) y no el procesamiento.`
+          ? `La cámara acepta ${asked} FPS pero entrega ${s.cameraFps.toFixed(0)}. Prueba "Método de captura: Compatible" en Cámara y rendimiento y reinicia la app.`
           : `La cámara entrega ${s.cameraFps.toFixed(0)} FPS en el modo ${s.negotiated}.`,
       );
       if (s.probe) items.push(`Modos probados: ${s.probe}.`);

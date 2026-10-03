@@ -109,6 +109,14 @@
       <select id="camera"></select>
     </div>
     <div class="field">
+      <label for="cameraBackend">Método de captura (Windows)</label>
+      <select id="cameraBackend">
+        <option value="auto">Automático (Media Foundation, decodificación por software)</option>
+        <option value="directshow">Compatible (DirectShow)</option>
+      </select>
+      <span class="hint">Si la cámara entrega menos FPS de los que acepta, prueba "Compatible". Hay que cerrar y abrir la app.</span>
+    </div>
+    <div class="field">
       <label for="profile">Perfil de calidad</label>
       <select id="profile">
         <option value="auto">Automático (según el benchmark)</option>

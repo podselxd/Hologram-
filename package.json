@@ -1,6 +1,6 @@
 {
   "name": "hologram",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Desktop hand-tracking overlay: crystal-blue hand landmarks drawn over the whole desktop.",
   "main": "dist/main.js",
